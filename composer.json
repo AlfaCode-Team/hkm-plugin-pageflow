@@ -3,13 +3,21 @@
     "description": "HKM Kernel plugin providing 'http.pageflow'.",
     "type": "library",
     "license": "MIT",
-    "keywords": ["hkm-kernel", "plugin", "php", "http.pageflow"],
+    "keywords": [
+        "hkm-kernel",
+        "plugin",
+        "php",
+        "http.pageflow"
+    ],
     "require": {
         "php": ">=8.4"
     },
     "autoload": {
         "psr-4": {
             "Plugins\\Pageflow\\": ""
-        }
+        },
+        "files": [
+            "Support/helpers.php"
+        ]
     }
 }
