@@ -8,6 +8,7 @@ export { precognitiveValidate, normalizeErrors, type Errors } from '@pageflow/co
 export { registerPageflowSW, clearPageflowSWCache, type ServiceWorkerOptions } from '@pageflow/core'
 export { default as usePrecognition } from './usePrecognition'
 export type { PrecognitionHelpers, UsePrecognitionOptions } from './usePrecognition'
+export { default as AppErrorBoundary } from './AppErrorBoundary'
 export { default as Can } from './Can'
 export type { CanProps } from './Can'
 export { default as createPageflowApp } from './createPageflowApp'
