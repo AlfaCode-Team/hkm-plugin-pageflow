@@ -158,7 +158,16 @@ export function AdminLayout({
             <PageHeaderBar />
           </div>
 
-          <main className="min-h-0 flex-1 overflow-hidden px-2 py-6 pl-6">{children}</main>
+          {/*
+            The scroll container. It MUST be overflow-y-auto: the shell root is
+            `h-screen overflow-hidden` so the sidebar can stay put, which means
+            nothing below it scrolls unless a descendant opts in. With
+            `overflow-hidden` here any page taller than the viewport was simply
+            CLIPPED — no scrollbar, no indication, the rest of the form just did
+            not exist. min-h-0 is what lets a flex child shrink below its content
+            height; without it the container grows and the clipping returns.
+          */}
+          <main className="min-h-0 flex-1 overflow-y-auto px-2 py-6 pl-6">{children}</main>
 
           <PageFooterBar />
           <Toaster position={toastPosition} />
