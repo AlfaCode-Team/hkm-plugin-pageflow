@@ -38,6 +38,18 @@ export interface SettingsTab {
   order: number;
   /** Visible only while this feature is enabled. */
   feature?: string;
+  /**
+   * Extra search terms for the settings page's filter.
+   *
+   * A settings page grows past the point where anyone remembers which tab holds
+   * a field — "DKIM" lives under Email, "basis points" under Voting — and a
+   * label alone does not say so. These are matched alongside the label,
+   * description and group, so a field is findable without knowing its tab.
+   *
+   * Write what a person would actually type, including the words the UI does
+   * NOT use: "smtp", "spf", "2fa", "webhook", "retention".
+   */
+  keywords?: string[];
   /** Icon component or a name registered via `registerIcons()`. */
   icon?: ComponentType | string;
   /**
