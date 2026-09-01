@@ -7,6 +7,7 @@ import { usePageflowErrors } from "../hooks/usePageflowErrors";
 import { DashboardHeader } from "./Header";
 import { PageChromeProvider, PageFooterBar, PageHeaderBar } from "./PageHeader";
 import { SidebarContent } from "./Sidebar";
+import { ContentContainer, ContentWidthProvider, type ContentWidth } from "./content";
 import { OrgSwitcher } from "./OrgSwitcher";
 
 export interface AdminLayoutProps {
@@ -34,6 +35,14 @@ export interface AdminLayoutProps {
   defaultSidebarOpen?: boolean;
   /** Toast position. Default "top-center". */
   toastPosition?: "top-left" | "top-center" | "top-right" | "bottom-left" | "bottom-center" | "bottom-right";
+  /**
+   * How wide the centred content column may get. Default `"default"` (max-w-7xl).
+   *
+   * `"full"` restores edge-to-edge content for a page that genuinely needs the
+   * whole viewport — a wide table, a board, a map. It applies to the page
+   * header and footer bars too, so those keep lining up with the content.
+   */
+  contentWidth?: ContentWidth;
 
   // ── Sidebar slots ───────────────────────────────────────────────────────────
   // Named `sidebar*` on purpose. An earlier revision inherited `header`/`footer`
@@ -90,6 +99,7 @@ export function AdminLayout({
   clock = true,
   defaultSidebarOpen = true,
   toastPosition = "top-center",
+  contentWidth = "default",
   sidebarHeader,
   sidebarFooter,
   onNotifications,
@@ -113,6 +123,7 @@ export function AdminLayout({
   );
 
   const shell = (
+    <ContentWidthProvider width={contentWidth}>
     <PageChromeProvider>
       <div className="flex h-screen w-full overflow-hidden">
         {!isMobile && (
@@ -167,13 +178,22 @@ export function AdminLayout({
             not exist. min-h-0 is what lets a flex child shrink below its content
             height; without it the container grows and the clipping returns.
           */}
-          <main className="min-h-0 flex-1 overflow-y-auto px-2 py-6 pl-6">{children}</main>
+          {/*
+            The horizontal padding lives on the CONTAINER, not here, so `main`,
+            the page header bar and the page footer bar share one column and one
+            padding value. It used to be `px-2 pl-6` — 24px on the left, 8px on
+            the right — which nothing lined up with, including itself.
+          */}
+          <main className="min-h-0 flex-1 overflow-y-auto py-6">
+            <ContentContainer>{children}</ContentContainer>
+          </main>
 
           <PageFooterBar />
           <Toaster position={toastPosition} />
         </div>
       </div>
     </PageChromeProvider>
+    </ContentWidthProvider>
   );
 
   // Outermost first, so `providers={[A, B]}` renders <A><B>{shell}</B></A>.
