@@ -36,6 +36,7 @@
         { "key": "PAGEFLOW_CSRF_LIFETIME",   "type": "int",    "required": false },
         { "key": "PAGEFLOW_STREAM_INTERVAL",    "type": "int", "required": false },
         { "key": "PAGEFLOW_STREAM_MAX_SECONDS", "type": "int", "required": false },
-        { "key": "PAGEFLOW_PRECOGNITION_ROLLBACK", "type": "bool", "required": false }
+        { "key": "PAGEFLOW_PRECOGNITION_ROLLBACK", "type": "bool", "required": false },
+        { "key": "VITE_SURFACE", "type": "string", "required": false, "default": "admin" }
     ]
 }
