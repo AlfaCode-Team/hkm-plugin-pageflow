@@ -39,6 +39,9 @@ export type {
   PageFooterState,
 } from "./PageHeader";
 
+export { ContentContainer, ContentWidthProvider, useContentClass } from "./content";
+export type { ContentWidth } from "./content";
+
 export { useAdminShell, useCurrentPath } from "./useAdminShell";
 export type { AdminShellState } from "./useAdminShell";
 export type { AdminShellProps, AdminShellTenant, AdminShellUser } from "./types";

@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { Button } from "@ui/button";
+import { ContentContainer } from "./content";
 
 /**
  * The page header/footer bars.
@@ -114,24 +115,29 @@ export function PageHeaderBar() {
   if (!header) return null;
 
   return (
-    <div className="shrink-0 border-b border-border bg-background px-3 py-2.5 md:px-6 md:py-3">
-      <div className="flex flex-col items-stretch gap-2 md:flex-row md:items-center md:justify-between md:gap-8">
-        <div className="min-w-0 flex-1">
-          <h1 className="line-clamp-2 text-sm font-semibold leading-tight text-foreground md:text-base lg:text-lg">
-            {header.title}
-          </h1>
-          {header.description && (
-            <p className="mt-0.5 line-clamp-3 text-sm text-muted-foreground">
-              {header.description}
-            </p>
+    // The BAR spans the viewport — its border and background are chrome — while
+    // its content sits in the same centred column as `main`, so the title lines
+    // up with the thing it is titling.
+    <div className="shrink-0 border-b border-border bg-background py-2.5 md:py-3">
+      <ContentContainer>
+        <div className="flex flex-col items-stretch gap-2 md:flex-row md:items-center md:justify-between md:gap-8">
+          <div className="min-w-0 flex-1">
+            <h1 className="line-clamp-2 text-sm font-semibold leading-tight text-foreground md:text-base lg:text-lg">
+              {header.title}
+            </h1>
+            {header.description && (
+              <p className="mt-0.5 line-clamp-3 text-sm text-muted-foreground">
+                {header.description}
+              </p>
+            )}
+          </div>
+          {header.actions && (
+            <div className="flex w-full shrink-0 items-center overflow-x-auto md:w-auto">
+              <HeaderActions actions={header.actions} />
+            </div>
           )}
         </div>
-        {header.actions && (
-          <div className="flex w-full shrink-0 items-center overflow-x-auto md:w-auto">
-            <HeaderActions actions={header.actions} />
-          </div>
-        )}
-      </div>
+      </ContentContainer>
     </div>
   );
 }
@@ -173,8 +179,8 @@ export function PageFooterBar() {
   if (!footer) return null;
 
   return (
-    <div className="z-20 shrink-0 border-t border-border bg-background/95 px-5 py-3.5 backdrop-blur supports-backdrop-filter:bg-background/80">
-      {footer.content}
+    <div className="z-20 shrink-0 border-t border-border bg-background/95 py-3.5 backdrop-blur supports-backdrop-filter:bg-background/80">
+      <ContentContainer>{footer.content}</ContentContainer>
     </div>
   );
 }
