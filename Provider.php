@@ -48,7 +48,11 @@ final class Provider implements ModuleContract
     /** @return list<class-string> */
     public function exposes(): array
     {
-        return [PageflowResponder::class];
+        // Mirrors module.json "exposes" exactly. Both are bound with bind()
+        // (not bindInternal), so both are reachable by a module declaring
+        // http.pageflow in requires[]; listing only one here made the method
+        // disagree with the manifest the kernel actually reads.
+        return [PageflowResponder::class, PageflowChannel::class];
     }
 
     public function register(ModuleContainer $container): void
