@@ -21,7 +21,7 @@ final class PageflowGroundTest extends PluginGroundTestCase
     }
 
     /**
-     * Providers for: vite.manifest
+     * Providers for: vite.manifest, i18n.translation
      *
      * Every required domain must be registered or the boot fails — that is
      * the kernel enforcing the dependency, not the harness being strict.
@@ -30,6 +30,7 @@ final class PageflowGroundTest extends PluginGroundTestCase
     {
         return [
             \Plugins\ViteManifest\Provider::class,
+            \Plugins\I18n\Provider::class,
         ];
     }
 
