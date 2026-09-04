@@ -56,7 +56,7 @@ final class PageflowStream
         $identity = $request->identity();
         if ($identity === null || $identity->isGuest()) {
             return Response::json(
-                ['error' => ['code' => 'pageflow.stream.unauthenticated', 'message' => 'Authentication required.']],
+                ['error' => ['code' => 'pageflow.stream.unauthenticated', 'message' => trans_or('pageflow::messages.stream.unauthenticated', 'Authentication is required.')]],
                 401,
             );
         }
