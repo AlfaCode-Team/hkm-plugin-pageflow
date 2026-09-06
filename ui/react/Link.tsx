@@ -38,6 +38,20 @@ interface BasePageflowLinkProps {
   async?: boolean
   cacheFor?: CacheForOption | CacheForOption[]
   prefetch?: boolean | LinkPrefetchOption | LinkPrefetchOption[]
+  /**
+   * Leave this link to the browser: render a plain anchor and let the click
+   * cause a real, full page load instead of a Pageflow visit.
+   *
+   * `shouldIntercept` already hands back the links where an anchor is the ONLY
+   * correct behaviour (off-site, `target`, `download`, non-http schemes). This
+   * prop is for the other case — a same-origin page you want loaded fresh, with
+   * a new document, a new bundle boot and no carried-over client state.
+   *
+   * A full page load is a GET by definition, so `method` is meaningless here and
+   * the browser will GET `href` whatever it says. Prefetching is skipped too:
+   * there is nothing to prefetch into.
+   */
+  hard?: boolean
 }
 
 export type PageflowLinkProps = BasePageflowLinkProps &
@@ -71,6 +85,7 @@ const Link = forwardRef<unknown, PageflowLinkProps>(
       onError = noop,
       prefetch = false,
       cacheFor = 0,
+      hard = false,
       ...props
     },
     ref,
@@ -88,8 +103,14 @@ const Link = forwardRef<unknown, PageflowLinkProps>(
         return as
       }
 
+      // A hard link IS a browser navigation, and only an anchor performs one.
+      // A <button> would render with nothing to click through to.
+      if (hard) {
+        return 'a'
+      }
+
       return _method !== 'get' ? 'button' : as.toLowerCase()
-    }, [as, _method])
+    }, [as, _method, hard])
 
     const mergeDataArray = useMemo(
       () =>
@@ -147,6 +168,12 @@ const Link = forwardRef<unknown, PageflowLinkProps>(
 
     const prefetchModes: LinkPrefetchOption[] = useMemo(
       () => {
+        // The document is going away on click; a prefetched page object would be
+        // thrown out with it.
+        if (hard) {
+          return []
+        }
+
         if (prefetch === true) {
           return ['hover']
         }
@@ -161,7 +188,9 @@ const Link = forwardRef<unknown, PageflowLinkProps>(
 
         return [prefetch]
       },
-      Array.isArray(prefetch) ? prefetch : [prefetch],
+      // `hard` joins the deps: it short-circuits the body, so a memo keyed only
+      // on `prefetch` would keep serving the pre-`hard` modes.
+      Array.isArray(prefetch) ? [...prefetch, hard] : [prefetch, hard],
     )
 
     const cacheForValue = useMemo(() => {
@@ -196,6 +225,12 @@ const Link = forwardRef<unknown, PageflowLinkProps>(
       onClick: (event) => {
         onClick(event)
 
+        // Deliberately no preventDefault: the anchor navigates, exactly as it
+        // would if Pageflow were not on the page at all.
+        if (hard) {
+          return
+        }
+
         if (shouldIntercept(event)) {
           event.preventDefault()
 
@@ -224,6 +259,15 @@ const Link = forwardRef<unknown, PageflowLinkProps>(
         }
       },
       onMouseUp: (event) => {
+        // Guarded like its mousedown/click siblings. Unconditional, this handler
+        // took the navigation no matter what the other two had decided: a
+        // prefetch="click" link that shouldIntercept had just handed back — an
+        // off-site href, a target, a download — was hijacked here anyway, and a
+        // middle click both visited in place AND opened the new tab.
+        if (!shouldIntercept(event)) {
+          return
+        }
+
         event.preventDefault()
         router.visit(url, visitParams)
       },

@@ -251,7 +251,23 @@ export type VisitCallbacks = {
   onPrefetching: GlobalEventCallback<'prefetching'>
 }
 
-export type VisitOptions<T extends RequestPayload = RequestPayload> = Partial<Visit<T> & VisitCallbacks>
+export type VisitOptions<T extends RequestPayload = RequestPayload> = Partial<Visit<T> & VisitCallbacks> & {
+  /**
+   * Leave this visit to the browser: a real, full page load rather than an XHR
+   * that swaps a page object into the current document. The counterpart of
+   * `<Link hard>`, for the navigations that are not links.
+   *
+   * GET only — a browser navigation cannot carry a body — and it short-circuits
+   * before any request is built, so no callbacks, progress bar or `before` event
+   * fire. The dirty-form guard still works: a full load raises `beforeunload`,
+   * which is the guard's other half (see useDirtyGuard).
+   *
+   * Deliberately NOT part of `Visit`: nothing downstream of the short-circuit
+   * can observe it, so it never reaches a request, an event payload or the
+   * prefetch cache key.
+   */
+  hard?: boolean
+}
 
 export type ReloadOptions<T extends RequestPayload = RequestPayload> = Omit<
   VisitOptions<T>,
@@ -280,7 +296,9 @@ export type PendingVisitOptions = {
 
 export type PendingVisit = Visit & PendingVisitOptions
 
-export type ActiveVisit = PendingVisit & Required<VisitOptions>
+// `hard` is omitted rather than required: an ActiveVisit only exists on the path
+// where a request is actually made, which `hard` never reaches.
+export type ActiveVisit = PendingVisit & Required<Omit<VisitOptions, 'hard'>>
 
 export type InternalActiveVisit = ActiveVisit & {
   onPrefetchResponse?: (response: Response) => void
