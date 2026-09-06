@@ -31,7 +31,7 @@ import {
   VisitHelperOptions,
   VisitOptions,
 } from './types'
-import { transformUrlAndData } from './url'
+import { hrefToUrl, isSameUrlWithoutHash, transformUrlAndData } from './url'
 
 export class Router {
   protected syncRequestStream = new RequestStream({
@@ -158,6 +158,21 @@ export class Router {
   }
 
   public visit<T extends RequestPayload = RequestPayload>(href: string | URL, options: VisitOptions<T> = {}): void {
+    // Hand the navigation back to the browser before anything else happens: no
+    // pending visit, no progress bar, no saved scroll regions and no `before`
+    // event — this document is about to be replaced, so every one of those is
+    // work done for a page that will not exist to receive it.
+    //
+    // Skipping `before` does not skip the dirty-form guard. That guard listens on
+    // BOTH `before` and `beforeunload` (see useDirtyGuard), and a full page load
+    // is precisely what raises `beforeunload` — firing `before` as well would
+    // prompt the user twice for one navigation.
+    if (options.hard) {
+      this.hardVisit(href, options)
+
+      return
+    }
+
     const visit: PendingVisit = this.getPendingVisit(href, {
       ...options,
       showProgress: options.showProgress ?? !options.async,
@@ -193,6 +208,52 @@ export class Router {
     } else {
       revealProgress(true)
       requestStream.send(Request.create(requestParams, currentPage.get()))
+    }
+  }
+
+  /**
+   * Perform `{ hard: true }`: navigate the browser for real.
+   *
+   * Assign (or replace) FIRST, then reload only when the assignment on its own
+   * would not have re-fetched the document. Reloading first looks equivalent and
+   * is not: `location.reload()` re-fetches whatever the URL currently is, so a
+   * target differing from the current page only by its hash would reload the OLD
+   * hash and drop the requested one. Doing it in this order sets the URL the
+   * caller asked for and then guarantees the load `hard` promises.
+   */
+  protected hardVisit(href: string | URL, options: VisitOptions): void {
+    const method = (options.method ?? 'get').toLowerCase()
+
+    if (method !== 'get') {
+      // Not recoverable, and not something to paper over: a browser navigation
+      // carries no body, so honouring `hard` here would silently drop the data
+      // and issue a GET instead.
+      throw new Error(
+        `Pageflow: { hard: true } is only valid on a GET visit, but this one is ${method.toUpperCase()}. ` +
+          'A full page load is a browser navigation and cannot carry a request body. ' +
+          'Submit normally and redirect from the server, or drop { hard: true }.',
+      )
+    }
+
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    const url = hrefToUrl(href)
+
+    // Same document means the browser treats this as an in-page move and will
+    // not re-fetch on its own, whatever we assign.
+    const sameDocument = isSameUrlWithoutHash(window.location, url)
+
+    // `replace` means what it means for a soft visit — leave no history entry.
+    if (options.replace) {
+      window.location.replace(url.href)
+    } else {
+      window.location.href = url.href
+    }
+
+    if (sameDocument) {
+      window.location.reload()
     }
   }
 
