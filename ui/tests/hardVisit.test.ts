@@ -108,12 +108,38 @@ describe('router.visit(url, { hard: true })', () => {
     expect(reload).toHaveBeenCalledTimes(1)
   })
 
-  it('refuses a non-GET visit instead of silently dropping the body', () => {
+  it('refuses a method a browser form cannot send, instead of changing it', () => {
     atPage('https://app.test/dashboard')
 
-    expect(() => hardVisit('/reports', { method: 'post', data: { a: 1 } })).toThrow(/only valid on a GET visit/)
+    expect(() => hardVisit('/reports', { method: 'put', data: { a: 1 } })).toThrow(/only valid on a GET or POST visit/)
     expect(assigned).toEqual([])
     expect(replace).not.toHaveBeenCalled()
     expect(reload).not.toHaveBeenCalled()
+  })
+
+  it('submits a POST as a real form carrying its data and the CSRF token', () => {
+    atPage('https://app.test/dashboard')
+    const meta = document.createElement('meta')
+    meta.name = 'csrf-token'
+    meta.content = 'tok-123'
+    document.head.appendChild(meta)
+    const submit = vi.spyOn(HTMLFormElement.prototype, 'submit').mockImplementation(() => {})
+
+    try {
+      hardVisit('/reports', { method: 'post', data: { a: 1, tags: ['x', 'y'], on: true } })
+
+      expect(submit).toHaveBeenCalledOnce()
+      const form = submit.mock.contexts[0] as HTMLFormElement
+      expect(form.method).toBe('post')
+      expect(form.action).toBe('https://app.test/reports')
+      expect(Object.fromEntries(new FormData(form))).toEqual({
+        a: '1', 'tags[0]': 'x', 'tags[1]': 'y', on: '1', _csrf_token: 'tok-123',
+      })
+      expect(assigned).toEqual([])
+    } finally {
+      submit.mockRestore()
+      meta.remove()
+      document.querySelectorAll('form').forEach((f) => f.remove())
+    }
   })
 })

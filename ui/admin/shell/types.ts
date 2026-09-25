@@ -42,7 +42,10 @@ export interface AdminShellProps {
   features?: FeatureInput[];
   /** Where the nav's "home" crumb points. Default `/admin`. */
   homePath?: string;
-  /** POST target for the sidebar's log-out action. Default `/auth/logout`. */
+  /**
+   * Where the sidebar's log-out submits — a real form POST (full page load)
+   * that returns to the current page; see router.logout(). Default `/auth/logout`.
+   */
   logoutUrl?: string;
   /** Link target for the sidebar's account action. Default `/account/profile`. */
   accountUrl?: string;

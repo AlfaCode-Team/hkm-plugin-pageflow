@@ -61,7 +61,8 @@ export function SidebarContent({
 
   // POST, not a link: log-out is a state change, and a GET is CSRF-reachable
   // from any page that can embed an image. Pageflow attaches the CSRF token.
-  const logout = () => router.post(logoutUrl);
+  // A full page load, back to this page as a signed-out visitor — see router.logout().
+  const logout = () => void router.logout(logoutUrl);
 
   return (
     <>

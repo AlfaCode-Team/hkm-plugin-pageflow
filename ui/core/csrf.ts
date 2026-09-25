@@ -16,6 +16,12 @@
 export type CsrfConfig = {
   /** Header name the platform's CsrfTokenLayer reads. Default: 'X-CSRF-Token'. */
   headerName: string
+  /**
+   * Body field the platform's CsrfTokenLayer reads from a FORM submission
+   * (its `formField`). Used by hard POSTs, which cannot send a header.
+   * Default: '_csrf_token'.
+   */
+  formField: string
   /** <meta name="..."> that carries the token in the rendered HTML. Default: 'csrf-token'. */
   metaName: string
   /**
@@ -27,6 +33,7 @@ export type CsrfConfig = {
 
 const config: CsrfConfig = {
   headerName: 'X-CSRF-Token',
+  formField: '_csrf_token',
   metaName: 'csrf-token',
   resolver: null,
 }
@@ -37,6 +44,11 @@ const config: CsrfConfig = {
  */
 export function configureCsrf(overrides: Partial<CsrfConfig>): void {
   Object.assign(config, overrides)
+}
+
+/** The form field a hard POST carries the token in. */
+export function csrfFormField(): string {
+  return config.formField
 }
 
 /** The header name the platform expects the token in. */

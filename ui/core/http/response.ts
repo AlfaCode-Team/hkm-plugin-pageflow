@@ -7,7 +7,7 @@ import Queue from '../queue'
 import { RequestParams } from './requestParams'
 import { SessionStorage } from '../sessionStorage'
 import { ActiveVisit, ErrorBag, Errors, Page } from '../types'
-import { hrefToUrl, isSameUrlWithoutHash, setHashIfSameUrl } from '../url'
+import { hrefToUrl, isSameUrlWithoutHash, redirectedTo, setHashIfSameUrl } from '../url'
 
 const queue = new Queue<Promise<boolean | void>>()
 
@@ -88,6 +88,17 @@ export class Response {
       return this.locationVisit(locationUrl)
     }
 
+    // The server redirected this visit and it ended on something that is not a
+    // Pageflow page — a plain HTML page, a download, another app's screen. Go
+    // there the way an ordinary link would: a full page load of the URL the
+    // redirect led to. (A redirect to another ORIGIN never gets here — the XHR
+    // cannot follow it, so PageflowStage answers 409 + X-Pageflow-Location.)
+    // Errors are not followed: the dialog below explains them instead.
+    const landedOn = redirectedTo(this.requestParams.all().url, (this.response.request as { responseURL?: string } | undefined)?.responseURL)
+    if (landedOn !== null && this.response.status < 400) {
+      return this.locationVisit(landedOn)
+    }
+
     const response = {
       ...this.response,
       data: this.getDataFromResponse(this.response.data),
@@ -95,7 +106,7 @@ export class Response {
 
     if (fireInvalidEvent(response)) {
       
-      return modal.show(response.data)
+      return modal.show(response.data, this.response.status, String(this.requestParams.all().url ?? ''))
     }
   }
 

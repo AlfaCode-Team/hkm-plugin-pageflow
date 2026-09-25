@@ -74,6 +74,8 @@ createPageflowApp({
 | SEO head + tab title | automatic (`seoHead` prop) | `seoFor()` / `seoPrivate()` |
 | Offline | `registerPageflowSW()` | `render(..., cacheable: true)` |
 | Typed props | `usePage<T>()` | `hkm pageflow:types` |
+| Your own error dialog | `createPageflowApp({ errorModal })` | kernel error envelope |
+| Sign out | `router.logout()` | `/auth/logout` redirects the form back |
 
 ## SEO — the reserved `seoHead` prop
 
@@ -108,6 +110,92 @@ How it flows — no other wiring needed:
 head (extra meta, links) — just don't use it for the title on pages that pass
 `seoHead`.
 
+## Signing out — `router.logout()`
+
+```tsx
+<button onClick={() => void router.logout()}>Sign out</button>   // POST /auth/logout, come back here
+router.logout('/logout')                                           // a project's own endpoint
+```
+
+A sign-out is a **full page load**, never an XHR: it changes who the server is
+talking to, so every page object and shared prop in memory belongs to the
+outgoing user. `router.logout()`:
+
+1. drops the prefetch cache and the service-worker page cache (both hold pages
+   authorised as the outgoing user — this matters on a shared device);
+2. fetches a fresh CSRF token from `/pageflow/csrf`, so a tab left open past the
+   token's lifetime does not post a stale one and land on a bare 403;
+3. submits a real form POST carrying `redirectTo` = the current path.
+
+The endpoint answers the form with a redirect to `redirectTo` (Auth's
+`/auth/logout` does, from v1.9.0), which reloads the page as a signed-out
+visitor. The admin shell's sidebar sign-out uses it.
+
+It is built on `{ hard: true }` for POST: `router.post(url, data, { hard: true })`
+submits a real HTML form — data flattened to `key[0]` / `key[sub]`, the CSRF
+token as the `_csrf_token` field (`configureCsrf({ formField })` to rename) — and
+the server's response replaces the document. Files cannot be carried and throw;
+methods other than GET and POST throw, because a browser form has no others.
+
+## Error dialog — a project draws its own
+
+When a visit gets back something that is not a Pageflow page — the kernel's
+error envelope, a PHP error page, a route that answers with plain HTML or JSON —
+the router shows an overlay. It is the one piece of UI Pageflow draws itself, so
+a project can take it over completely:
+
+```tsx
+import { createPageflowApp, type PageflowErrorModalProps } from "@pageflow/react";
+
+function ErrorDialog({ error, onClose }: PageflowErrorModalProps) {
+  // Your Dialog, your tokens, your layout. Call onClose() to dismiss.
+}
+
+createPageflowApp({ resolve, setup, errorModal: ErrorDialog });
+```
+
+`error` is the response, normalised:
+
+| Field | Meaning |
+|---|---|
+| `status` | HTTP status |
+| `kind` | `'json'`, `'html'` or `'text'` |
+| `message` | `error.message` from the envelope, or a plain sentence for the status |
+| `code` | `error.code` from the envelope, or `null` |
+| `html` | the markup when `kind === 'html'` — show it in a **sandboxed iframe** (`sandbox=""`, `srcDoc`), never via `innerHTML` |
+| `data` | the body as received |
+| `url` | the URL the visit requested |
+| `fullPage` | `true` for an ordinary HTML page (2xx/3xx), not an error — ask, then open `url` with `window.location.assign(url)` |
+
+The component is rendered in its own React root on `<body>`, outside the app's
+providers — wrap it in whatever it needs. A theme applied as a class on `<html>`
+reaches it unchanged.
+
+Not React? `configureErrorModal({ mount(error, host, close) { … } })` from
+`@pageflow/core` hands you an empty host element instead; return a cleanup
+function to run on close.
+
+Without either, a compact default card is shown: centred, at most 720px wide and
+80% of the viewport high, the message up front and the raw response behind
+"Details", HTML in a sandboxed iframe. For a `fullPage` response it asks "Open
+this page?" and, on yes, loads the URL with a full page load, as a plain link
+would.
+
+### Redirects leave the app the way a link would
+
+A visit is never trapped by a redirect it cannot render:
+
+| The visit is redirected to… | What happens |
+|---|---|
+| another Pageflow page on this origin | rendered in place, as before |
+| a non-Pageflow page on this origin | the client does a full page load of the URL the redirect led to — no dialog |
+| another origin (host, scheme or port) | `PageflowStage` answers `409` + `X-Pageflow-Location`, and the client does a full page load there. The browser could not follow it inside the XHR (CORS), so the click used to do nothing |
+
+A redirect that ends in an error status is not followed; the error dialog
+explains it instead. A listener on the cancellable
+`pageflow:invalid` document event still runs first and can suppress the overlay
+altogether.
+
 ## Security invariants (do not regress)
 
 - **Push signals, pull data** — the reactive channel emits prop key *names* only;
@@ -116,6 +204,8 @@ head (extra meta, links) — just don't use it for the title on pages that pass
   throttled `/pageflow/csrf` endpoint (never in page-object JSON or SW cache).
 - **Client permission checks are UX only** — the Service layer is the authority.
 - **Offline caching is opt-in** — authenticated pages are never cached by default.
+- **A non-Pageflow response never runs in the app** — the error overlay shows
+  HTML in a sandboxed iframe, never through `innerHTML` or `document.write`.
 
 See the full guide PDFs for cookbook examples, the wire protocol, and the
 security hardening ledger.

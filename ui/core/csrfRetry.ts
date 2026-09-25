@@ -121,3 +121,33 @@ function extractReason(data: unknown): string {
   }
   return ''
 }
+
+/**
+ * Fetch a fresh token once and install it, resolving to it (or null when the
+ * endpoint is missing or unreachable — the page's current token then stands).
+ * For a submission that cannot be retried, like a hard POST: a tab left open
+ * past the token's lifetime would otherwise post a stale token and land the
+ * user on a bare 403 page.
+ */
+export async function refreshCsrfToken(endpoint = '/pageflow/csrf'): Promise<string | null> {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  try {
+    const response = await axios.get(endpoint, {
+      withCredentials: true,
+      timeout: 5000,
+      headers: { Accept: 'application/json' },
+    })
+    const token = response?.data?.token
+    if (typeof token === 'string' && token !== '') {
+      setCsrfToken(token)
+      return token
+    }
+  } catch {
+    // Endpoint disabled, offline, throttled — keep the token we have.
+  }
+
+  return null
+}

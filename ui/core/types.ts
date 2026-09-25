@@ -257,9 +257,10 @@ export type VisitOptions<T extends RequestPayload = RequestPayload> = Partial<Vi
    * that swaps a page object into the current document. The counterpart of
    * `<Link hard>`, for the navigations that are not links.
    *
-   * GET only — a browser navigation cannot carry a body — and it short-circuits
-   * before any request is built, so no callbacks, progress bar or `before` event
-   * fire. The dirty-form guard still works: a full load raises `beforeunload`,
+   * GET navigates; POST submits a real form (the CSRF token rides as a form
+   * field) and the server's redirect replaces the document. Other methods throw
+   * — a browser form can only GET or POST. It short-circuits before any request
+   * is built, so no callbacks, progress bar or `before` event fire. The dirty-form guard still works: a full load raises `beforeunload`,
    * which is the guard's other half (see useDirtyGuard).
    *
    * Deliberately NOT part of `Visit`: nothing downstream of the short-circuit

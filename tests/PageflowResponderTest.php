@@ -282,4 +282,48 @@ final class PageflowResponderTest extends TestCase
 
         $this->assertSame('OK', $response->body());
     }
+
+    // ── 5. Off-origin redirect → client-side full page load ──────────────────
+
+    /** Run the stage on a Pageflow visit to https://app.example.test/users whose controller redirects. */
+    private function redirectedVisit(string $location, bool $pageflow = true): \AlfacodeTeam\PhpServicePlatform\Kernel\Http\Response
+    {
+        $request = Request::build(
+            method: 'GET',
+            path: '/users',
+            headers: $pageflow ? ['X-Pageflow' => 'true', 'Host' => 'app.example.test'] : ['Host' => 'app.example.test'],
+            server: ['HTTPS' => 'on', 'HTTP_HOST' => 'app.example.test', 'SERVER_PORT' => 443],
+        );
+
+        return (new PageflowStage())->handle(
+            $request,
+            static fn(Request $r) => \AlfacodeTeam\PhpServicePlatform\Kernel\Http\Response::redirect($location),
+        );
+    }
+
+    public function test_a_redirect_to_another_host_becomes_a_full_page_load(): void
+    {
+        $response = $this->redirectedVisit('https://organizer.example.test/');
+
+        $this->assertSame(409, $response->status());
+        $this->assertSame('https://organizer.example.test/', $response->headers()['X-Pageflow-Location'] ?? null);
+    }
+
+    public function test_a_redirect_to_another_scheme_or_port_is_another_origin(): void
+    {
+        $this->assertSame(409, $this->redirectedVisit('http://app.example.test/login')->status());
+        $this->assertSame(409, $this->redirectedVisit('https://app.example.test:8443/login')->status());
+    }
+
+    public function test_a_same_origin_redirect_is_left_for_the_xhr_to_follow(): void
+    {
+        $this->assertSame(302, $this->redirectedVisit('/login')->status());
+        $this->assertSame(302, $this->redirectedVisit('https://app.example.test/login')->status());
+        $this->assertSame(302, $this->redirectedVisit('https://APP.example.test:443/login')->status());
+    }
+
+    public function test_an_ordinary_request_keeps_its_redirect(): void
+    {
+        $this->assertSame(302, $this->redirectedVisit('https://organizer.example.test/', pageflow: false)->status());
+    }
 }

@@ -37,6 +37,15 @@ use Plugins\Pageflow\API\Contracts\PageflowSharerContract;
  *        flash to the session and 303-redirect back so the origin page re-renders
  *        through the FULL pipeline with the `errors` shared prop. No session →
  *        degrade to 422. Non-Pageflow requests re-throw for the kernel ErrorStage.
+ *
+ *   AFTER $next
+ *     5. Off-origin redirect — a Pageflow XHR answered with a redirect to ANOTHER
+ *        origin gets 409 + X-Pageflow-Location instead, so the client does a
+ *        full page load there. The browser would otherwise follow the redirect
+ *        inside the XHR, hit CORS, and the click would silently do nothing. A
+ *        same-origin redirect is left alone: the XHR follows it, and the client
+ *        decides from what it lands on (a Pageflow page renders in place;
+ *        anything else is opened with a full page load).
  */
 final class PageflowStage implements HttpStageContract
 {
@@ -80,7 +89,9 @@ final class PageflowStage implements HttpStageContract
 
         // 4. Wrap execution to translate validation errors into Pageflow's shape.
         try {
-            return $next($request);
+            $response = $next($request);
+
+            return $this->offOriginRedirect($request, $response) ?? $response;
         } catch (ValidationException $e) {
             if (!$this->isPageflow($request)) {
                 throw $e; // let the kernel ErrorStage render it (non-SPA client)
@@ -108,6 +119,44 @@ final class PageflowStage implements HttpStageContract
             // manual onError handler still receives these. Session is recommended.
             return Response::json(['errors' => $errors], 422, ['X-Pageflow' => 'true']);
         }
+    }
+
+    /**
+     * 5. A redirect to another origin, turned into a client-side full page load.
+     * Null when this is not a Pageflow request, not a redirect, or a redirect
+     * the XHR can follow itself (relative, or to this same origin).
+     */
+    private function offOriginRedirect(Request $request, Response $response): ?Response
+    {
+        $status = $response->status();
+        if ($status < 300 || $status >= 400 || !$this->isPageflow($request)) {
+            return null;
+        }
+
+        $location = (string) (array_change_key_case($response->headers(), CASE_LOWER)['location'] ?? '');
+        $host     = parse_url($location, PHP_URL_HOST);
+        if (!is_string($host) || $host === '') {
+            return null; // relative — same origin by construction
+        }
+
+        $here   = $request->uri();
+        $scheme = strtolower((string) (parse_url($location, PHP_URL_SCHEME) ?: $here->getScheme()));
+        $target = self::origin($scheme, $host, parse_url($location, PHP_URL_PORT) ?: null);
+
+        if ($target === self::origin($here->getScheme(), $here->getHost(), $here->getPort())) {
+            return null;
+        }
+
+        return Response::json([], 409, ['X-Pageflow-Location' => $location]);
+    }
+
+    /** "scheme://host[:port]", lower-cased, with the scheme's default port dropped. */
+    private static function origin(string $scheme, string $host, ?int $port): string
+    {
+        $scheme = strtolower($scheme);
+        $default = ['http' => 80, 'https' => 443][$scheme] ?? null;
+
+        return $scheme . '://' . strtolower($host) . ($port !== null && $port !== $default ? ':' . $port : '');
     }
 
     private function isPageflow(Request $request): bool

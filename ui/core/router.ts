@@ -32,6 +32,9 @@ import {
   VisitOptions,
 } from './types'
 import { hrefToUrl, isSameUrlWithoutHash, transformUrlAndData } from './url'
+import { hardSubmit } from './hardSubmit'
+import { refreshCsrfToken } from './csrfRetry'
+import { clearPageflowSWCache } from './serviceWorker'
 
 export class Router {
   protected syncRequestStream = new RequestStream({
@@ -224,13 +227,21 @@ export class Router {
   protected hardVisit(href: string | URL, options: VisitOptions): void {
     const method = (options.method ?? 'get').toLowerCase()
 
+    // A POST can be a browser navigation too: a real form submission. The
+    // server answers it like any form post — normally with a redirect — and
+    // that response replaces the document.
+    if (method === 'post') {
+      hardSubmit(hrefToUrl(href), (options.data ?? {}) as Record<string, unknown>)
+
+      return
+    }
+
     if (method !== 'get') {
-      // Not recoverable, and not something to paper over: a browser navigation
-      // carries no body, so honouring `hard` here would silently drop the data
-      // and issue a GET instead.
+      // Not recoverable, and not something to paper over: an HTML form can only
+      // GET or POST, so honouring `hard` here would silently change the method.
       throw new Error(
-        `Pageflow: { hard: true } is only valid on a GET visit, but this one is ${method.toUpperCase()}. ` +
-          'A full page load is a browser navigation and cannot carry a request body. ' +
+        `Pageflow: { hard: true } is only valid on a GET or POST visit, but this one is ${method.toUpperCase()}. ` +
+          'A full page load is a browser navigation, and a browser form can only GET or POST. ' +
           'Submit normally and redirect from the server, or drop { hard: true }.',
       )
     }
@@ -263,6 +274,43 @@ export class Router {
 
   public flush(href: string | URL, options: VisitOptions = {}): void {
     prefetchedRequests.remove(this.getPrefetchParams(href, options))
+  }
+
+  /**
+   * Sign out with a full page load, then come back to the page you were on.
+   *
+   *     router.logout()                  // POST /auth/logout, return here
+   *     router.logout('/logout')         // a project's own endpoint
+   *
+   * Hard on purpose. Signing out changes who the server is talking to, so every
+   * shared prop and page object in memory belongs to the outgoing user; only a
+   * real page load guarantees none of it survives. Before leaving it:
+   *
+   *   1. drops the prefetch cache and the service-worker page cache — both hold
+   *      pages authorised as the outgoing user, which matters on a shared device;
+   *   2. fetches a fresh CSRF token (a tab left open past the token's lifetime
+   *      would otherwise post a stale one and show a bare 403);
+   *   3. submits a real form POST carrying `redirectTo` = the current path.
+   *
+   * The server answers the form with a redirect to `redirectTo` (Auth's
+   * /auth/logout does), which reloads the page as a signed-out visitor — or
+   * sends them to sign in, if the page needs it.
+   */
+  public async logout(
+    url: string = '/auth/logout',
+    options: { redirectTo?: string; csrfEndpoint?: string | false } = {},
+  ): Promise<void> {
+    const redirectTo =
+      options.redirectTo ?? (typeof window === 'undefined' ? '/' : window.location.pathname + window.location.search)
+
+    this.flushAll()
+    await clearPageflowSWCache().catch(() => undefined)
+
+    if (options.csrfEndpoint !== false) {
+      await refreshCsrfToken(options.csrfEndpoint ?? '/pageflow/csrf')
+    }
+
+    this.visit(url, { method: 'post', data: { redirectTo }, hard: true })
   }
 
   public flushAll(): void {

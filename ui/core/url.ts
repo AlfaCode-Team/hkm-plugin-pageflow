@@ -83,3 +83,24 @@ export const setHashIfSameUrl = (originUrl: URL | Location, destinationUrl: URL 
 export const isSameUrlWithoutHash = (url1: URL | Location, url2: URL | Location): boolean => {
   return urlWithoutHash(url1).href === urlWithoutHash(url2).href
 }
+
+/**
+ * Where a visit's XHR ended up after the browser followed a redirect, or null
+ * when it was not redirected. `responseURL` is XMLHttpRequest's final URL.
+ *
+ * Compared on origin + path only: axios appends a GET visit's data as query
+ * parameters, so the query string of the final URL can differ from the
+ * requested one without any redirect having happened. A redirect that changes
+ * only the query string therefore reads as "not redirected" — the safe side,
+ * since the caller then shows its dialog instead of navigating away.
+ */
+export function redirectedTo(requested: string | URL, responseURL: string | undefined | null): URL | null {
+  if (!responseURL) {
+    return null
+  }
+
+  const from = hrefToUrl(requested)
+  const to = hrefToUrl(responseURL)
+
+  return from.origin === to.origin && from.pathname === to.pathname ? null : to
+}

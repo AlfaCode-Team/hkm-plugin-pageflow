@@ -1,5 +1,6 @@
-import { Page, PageProps, PageResolver, router, setupProgress } from '@pageflow/core'
+import { Page, PageProps, PageResolver, PageflowErrorResponse, configureErrorModal, router, setupProgress } from '@pageflow/core'
 import { ComponentType, FunctionComponent, Key, ReactElement, ReactNode, createElement } from 'react'
+import { createRoot } from 'react-dom/client'
 import { renderToString } from 'react-dom/server'
 import App from './App'
 
@@ -32,6 +33,12 @@ type BasePageflowAppOptions = {
   resolve: PageResolver
 }
 
+/** Props a project's error dialog receives — see `errorModal` below. */
+export type PageflowErrorModalProps = {
+  error: PageflowErrorResponse
+  onClose: () => void
+}
+
 type CreatePageflowAppSetupReturnType = ReactInstance | void
 type PageflowAppOptionsForCSR<SharedProps extends PageProps> = BasePageflowAppOptions & {
   id?: string
@@ -46,6 +53,13 @@ type PageflowAppOptionsForCSR<SharedProps extends PageProps> = BasePageflowAppOp
         showSpinner?: boolean
       }
   setup(options: SetupOptions<HTMLElement, SharedProps>): CreatePageflowAppSetupReturnType
+  /**
+   * The project's own dialog for a visit that got back something other than a
+   * Pageflow page (an error, plain HTML or JSON). Rendered in its own React
+   * root on <body>, so it is outside the app's providers — wrap it in whatever
+   * it needs. Omit it for Pageflow's compact default card.
+   */
+  errorModal?: ComponentType<PageflowErrorModalProps>
 }
 
 type CreatePageflowAppSSRContent = { head: string[]; body: string }
@@ -71,6 +85,7 @@ export default async function createPageflowApp<SharedProps extends PageProps = 
   progress = {},
   page,
   render,
+  ...rest
 }: PageflowAppOptionsForCSR<SharedProps> | PageflowAppOptionsForSSR<SharedProps>): Promise<
   CreatePageflowAppSetupReturnType | CreatePageflowAppSSRContent
 > {
@@ -102,6 +117,17 @@ export default async function createPageflowApp<SharedProps extends PageProps = 
 
   if (!isServer && progress) {
     setupProgress(progress)
+  }
+
+  const ErrorModal = (rest as { errorModal?: ComponentType<PageflowErrorModalProps> }).errorModal
+  if (!isServer && ErrorModal) {
+    configureErrorModal({
+      mount(error, host, close) {
+        const root = createRoot(host)
+        root.render(createElement(ErrorModal, { error, onClose: close }))
+        return () => root.unmount()
+      },
+    })
   }
 
   if (isServer) {
