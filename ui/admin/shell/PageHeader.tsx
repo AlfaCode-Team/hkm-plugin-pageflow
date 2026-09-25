@@ -7,6 +7,8 @@ import {
   type DependencyList,
   type ReactNode,
 } from "react";
+import { ArrowLeft } from "lucide-react";
+import { Link } from "@pageflow/react";
 import { Button } from "@ui/button";
 import { ContentContainer } from "./content";
 
@@ -29,9 +31,62 @@ export interface PageHeaderAction {
   disabled?: boolean;
 }
 
+/**
+ * Where "up" is from this page.
+ *
+ * A DETAIL page needs this and a list page does not, which is why it belongs
+ * here rather than in the sidebar: the sidebar answers "where can I go", and
+ * this answers "where did I come from". Rendering it inside the header bar —
+ * before the title, on the same line — is what keeps it from scrolling away
+ * with the content, which is exactly when somebody reaches for it.
+ *
+ * `label` is not drawn at any breakpoint; it is the accessible name. The
+ * control is an arrow and nothing else, because a detail page's header already
+ * says what you are looking at and repeating "All businesses" beside it spends
+ * the widest part of the bar on the one thing the user is leaving.
+ */
+export interface PageHeaderBack {
+  href: string;
+  /** Accessible name, e.g. "Back to all businesses". Required — an icon-only
+   *  control with no name is unusable with a screen reader. */
+  label: string;
+}
+
+/**
+ * One level in this page's place in the hierarchy — NOT a page you visited.
+ *
+ * The nav registry describes two levels (a sidebar item and its children), so
+ * it can place `/businesses` but knows nothing of `/businesses/{id}/branches`
+ * or of what that id is called. A page that sits deeper states its own chain,
+ * because it is the only thing holding the entity's name.
+ */
+export interface PageCrumb {
+  label: string;
+  /**
+   * Where this level lives. Omit it on the page you are already on, and on a
+   * grouping level that has no page of its own — a crumb without an href is
+   * rendered as text rather than as a link that goes nowhere.
+   */
+  href?: string;
+}
+
 export interface PageHeaderState {
   title: string;
   description?: string;
+  /** A detail page's way back. Omitted on list pages, which have no "up". */
+  back?: PageHeaderBack;
+  /**
+   * This page's ancestry for the breadcrumb bar, outermost first, INCLUDING
+   * this page as the last entry. Home is prepended by the shell, so do not
+   * repeat it.
+   *
+   * Omit it and the shell derives the trail from the nav registry, which is
+   * right for anything the registry can place. Declare it when the page is
+   * deeper than the registry reaches, or when several sibling pages share one
+   * title — four pages about one business all titled with its name are
+   * indistinguishable in a breadcrumb unless they each name their own section.
+   */
+  crumbs?: PageCrumb[];
   actions?: PageHeaderAction[] | ReactNode;
 }
 
@@ -110,6 +165,27 @@ export function HeaderActions({ actions }: { actions?: PageHeaderAction[] | Reac
   );
 }
 
+/**
+ * The arrow, sized and aligned to the title rather than to the bar.
+ *
+ * `shrink-0` matters: the title is `line-clamp-2`, so on a narrow viewport a
+ * long name wraps to two lines and a flexible arrow would be squeezed to
+ * nothing. `self-start` with a nudge keeps it on the FIRST line of a wrapped
+ * title instead of floating to the vertical centre of the block.
+ */
+function BackLink({ back }: { back: PageHeaderBack }) {
+  return (
+    <Link
+      href={back.href}
+      aria-label={back.label}
+      title={back.label}
+      className="mt-0.5 flex size-8 shrink-0 items-center justify-center self-start rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:mt-0 md:self-center"
+    >
+      <ArrowLeft className="size-4" aria-hidden="true" />
+    </Link>
+  );
+}
+
 export function PageHeaderBar() {
   const { header } = usePageHeader();
   if (!header) return null;
@@ -121,15 +197,18 @@ export function PageHeaderBar() {
     <div className="shrink-0 border-b border-border bg-background py-2.5 md:py-3">
       <ContentContainer>
         <div className="flex flex-col items-stretch gap-2 md:flex-row md:items-center md:justify-between md:gap-8">
-          <div className="min-w-0 flex-1">
-            <h1 className="line-clamp-2 text-sm font-semibold leading-tight text-foreground md:text-base lg:text-lg">
-              {header.title}
-            </h1>
-            {header.description && (
-              <p className="mt-0.5 line-clamp-3 text-sm text-muted-foreground">
-                {header.description}
-              </p>
-            )}
+          <div className="flex min-w-0 flex-1 items-center gap-2 md:gap-3">
+            {header.back && <BackLink back={header.back} />}
+            <div className="min-w-0 flex-1">
+              <h1 className="line-clamp-2 text-sm font-semibold leading-tight text-foreground md:text-base lg:text-lg">
+                {header.title}
+              </h1>
+              {header.description && (
+                <p className="mt-0.5 line-clamp-3 text-sm text-muted-foreground">
+                  {header.description}
+                </p>
+              )}
+            </div>
           </div>
           {header.actions && (
             <div className="flex w-full shrink-0 items-center overflow-x-auto md:w-auto">

@@ -212,12 +212,71 @@ The contribution seam between a page and the chrome. The page declares, the
 layout places, neither imports the other:
 
 ```tsx
-useSetPageHeader({ title, description, actions }, [deps]);   // clears on unmount
-useSetPageFooter({ content: <BulkActionBar /> }, [selected]); // sticky bottom bar
+useSetPageHeader({ title, description, back, crumbs, actions }, [deps]); // clears on unmount
+useSetPageFooter({ content: <BulkActionBar /> }, [selected]);           // sticky bottom bar
 ```
 
 `actions` is either `PageHeaderAction[]` (rendered as buttons, last one primary)
 or arbitrary JSX.
+
+`back` is `{ href, label }` and renders an arrow before the title — a DETAIL
+page's way up. The label is the accessible name and is never drawn: a detail
+header already says what you are looking at, so the widest part of the bar is
+not spent naming the page you are leaving. List pages omit it; they have no
+"up", and the sidebar already answers "where can I go".
+
+```tsx
+useSetPageHeader({
+  title: business.name,
+  description: "Platform operator view",
+  back: { href: "/businesses", label: "Back to all businesses" },
+  actions: <MyLinkButtons />,
+}, [business.businessId]);
+```
+
+### `crumbs` — the breadcrumb bar is a HIERARCHY, not a history
+
+The trail in the top bar answers "where does this page sit, and what are its
+parents". It is derived from the current path on every render and holds no
+state: it does not remember where you have been, and it must not — the browser
+already owns history, and its Back button is better at it.
+
+By default the shell reads the **nav registry**, which is right for anything the
+registry can place. The registry describes two levels, though, and knows no
+entity names — so a page deeper than that declares its own chain, outermost
+first, INCLUDING itself as the last entry. Home is prepended by the shell.
+
+```tsx
+useSetPageHeader({
+  title: business.name,
+  crumbs: [
+    { label: "Businesses", href: "/businesses" },
+    { label: business.name, href: `/businesses/${business.businessId}` },
+    { label: "Branches" },        // no href — this is the page you are on
+  ],
+}, [business.businessId, section]);
+// renders: Home / Businesses / Acme Ltd / Branches
+```
+
+A crumb with no `href` is rendered as text rather than as a link that goes
+nowhere — use that for the current page, and for a grouping level that has no
+page of its own.
+
+Declare `crumbs` whenever **several sibling pages share one title.** Four pages
+about one business, each titled with its name, are indistinguishable in a
+breadcrumb unless each names its own section.
+
+`back` and `crumbs` are not redundant. `back` is one control, in the page header
+where the content is, reachable without aiming; `crumbs` is the whole ancestry,
+in the chrome. A detail page usually wants both, and they may point at different
+levels — the arrow is for the one place people leave to.
+
+The derivation lives in `shell/crumbs.ts`, separately from the header that
+renders it, so it can be run outside React:
+
+```
+node shell/__checks__/crumbs.mjs
+```
 
 ---
 
@@ -280,7 +339,7 @@ hold in React state.
 | Group | Exports |
 |---|---|
 | nav | `registerModule` `unregisterModule` `registerFeature` `enableFeature` `disableFeature` `setEnabledFeatures` `isFeatureEnabled` `getAllFeatures` `getEnabledFeatures` `getModules` `getNavSections` `selectNavSections` `getFlatRoutes` `selectFlatRoutes` `registerIcons` `getIcon` `resolveIcon` `registeredIconNames` `registerSettingsTab` `selectSettingsTabs` `getSettingsTabs` |
-| shell | `AdminLayout` `AuthLayout` `SidebarContent` `SidebarNav` `DashboardHeader` `OrgSwitcher` `ThemeToggle` `PageChromeProvider` `PageHeaderBar` `PageFooterBar` `HeaderActions` `usePageHeader` `usePageFooter` `useSetPageHeader` `useSetPageFooter` `useAdminShell` `useCurrentPath` — plus `AppErrorBoundary`, re-exported from `@pageflow/react` |
+| shell | `AdminLayout` `AuthLayout` `SidebarContent` `SidebarNav` `DashboardHeader` `OrgSwitcher` `ThemeToggle` `PageChromeProvider` `PageHeaderBar` `PageFooterBar` `HeaderActions` `usePageHeader` `usePageFooter` `useSetPageHeader` `useSetPageFooter` `crumbsFor` `registryTrail` `useAdminShell` `useCurrentPath` — plus `AppErrorBoundary`, re-exported from `@pageflow/react` |
 | data | `DataTable` `ResourceListShell` `StatStrip` `FilterChips` `Pagination` `pageWindow` `EmptyState` `SimpleTable` `useResourceList` `resourceRequest` `copyToClipboard` `KpiCard` `DetailDrawer` `DrawerSection` `DrawerField` `TableQuery` |
 | forms | `FieldHelp` `TagInput` `SuggestionSelect` |
 | hooks | `useMediaQuery` `useIsMobile` `useIsTablet` `useIsDesktop` `usePrefersReducedMotion` `usePageflowErrors` `useDebouncedAutosave` `useApi` |

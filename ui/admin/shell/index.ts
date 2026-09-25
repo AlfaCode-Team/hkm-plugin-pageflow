@@ -11,6 +11,9 @@ export { SidebarNav } from "./SidebarNav";
 export { DashboardHeader } from "./Header";
 export type { DashboardHeaderProps } from "./Header";
 
+export { crumbsFor, registryTrail } from "./crumbs";
+export type { Crumb } from "./crumbs";
+
 export { OrgSwitcher } from "./OrgSwitcher";
 export type { OrgSwitcherProps } from "./OrgSwitcher";
 
@@ -35,6 +38,8 @@ export {
 } from "./PageHeader";
 export type {
   PageHeaderAction,
+  PageHeaderBack,
+  PageCrumb,
   PageHeaderState,
   PageFooterState,
 } from "./PageHeader";

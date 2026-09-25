@@ -11,50 +11,8 @@ import {
 } from "@ui/breadcrumb";
 import { selectNavSections } from "../nav/registry";
 import { usePageHeader } from "./PageHeader";
+import { crumbsFor } from "./crumbs";
 import { useAdminShell, useCurrentPath } from "./useAdminShell";
-
-interface Crumb {
-  label: string;
-  path: string;
-}
-
-/**
- * Deepest static nav-registry label for `path`, prefix-matched the same way
- * the old fixed-depth breadcrumb did. Used only as a fallback for a page that
- * has not set its own `useSetPageHeader` title (or hasn't yet, mid-swap) —
- * the live title is preferred because it carries the real entity name
- * ("Uganda Music Awards 2026"), which no static route table knows.
- */
-function navRegistryLabel(path: string, features: ReturnType<typeof useAdminShell>["features"]): string | null {
-  let best: { label: string; length: number } | null = null;
-
-  for (const section of selectNavSections(features)) {
-    for (const item of section.items) {
-      for (const child of item.children ?? []) {
-        if (path === child.path || path.startsWith(child.path + "/")) {
-          if (!best || child.path.length > best.length) {
-            best = { label: child.label, length: child.path.length };
-          }
-        }
-      }
-      if (path === item.path || path.startsWith(item.path + "/")) {
-        if (!best || item.path.length > best.length) {
-          best = { label: item.label, length: item.path.length };
-        }
-      }
-    }
-  }
-
-  return best?.label ?? null;
-}
-
-/** Last resort: turn "/editions/abc123" into "Abc123" so a crumb never shows
-    a raw path or goes blank while nothing else has an opinion yet. */
-function fallbackLabel(path: string): string {
-  const last = path.split("/").filter(Boolean).pop();
-  if (!last) return "Home";
-  return last.replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-}
 
 export interface DashboardHeaderProps {
   sidebarOpen: boolean;
@@ -92,24 +50,35 @@ function LiveClock() {
 /**
  * Top bar: sidebar toggle, breadcrumbs, optional actions and clock.
  *
- * Breadcrumbs are a FLOW HISTORY, not a fixed-depth route match. 0.3's
- * successor here read the static nav registry — module → item → item's
- * direct children — which only ever has two levels below Home, so a real
- * drill-down (an event → one of its categories → one of that category's
- * contestants) got flattened to whatever the LAST registry match was. Every
- * page already sets its own title via `useSetPageHeader` (an edition's own
- * name, a contestant's own name, …), so the trail below is built from pages
- * actually visited, each labelled with its own live title — it grows exactly
- * as deep as the click-path that produced it, with no registry depth to run
- * out of. Revisiting an earlier crumb (Back, or clicking one) truncates back
- * to it rather than growing forever; landing on Home starts a fresh trail.
+ * BREADCRUMBS ARE A HIERARCHY, NOT A HISTORY. A revision of this file built the
+ * trail from pages actually visited, accumulated in state, to escape the nav
+ * registry's two-level ceiling. It escaped it by answering a different
+ * question, and the answers were wrong in both directions:
  *
- * `window.location.pathname` — what 0.3 read here — is a value captured once
- * at render that never updates, so after any client-side navigation the
- * sidebar highlight moved and the breadcrumb did not. Its crumb links were
- * also raw `window.location.href` assignments, i.e. a full page load that
- * threw away the SPA runtime. Both are `usePage()`-driven and `<Link>`-based
- * now.
+ *   - Four sibling pages under one entity (a business's overview, branches,
+ *     team and manage) all set the same live title, so walking through them
+ *     rendered `Home / Businesses / Acme / Acme / Acme` — the same name once
+ *     per click.
+ *   - Two unrelated sidebar destinations rendered as though one contained the
+ *     other: two sibling rows visited in order produced `Home / Licences /
+ *     Sessions`, whose "up" link went to a page Sessions is not inside.
+ *
+ * A breadcrumb's contract is "where this page sits, and what its parents are",
+ * which is a function of the CURRENT path alone — so the trail is derived on
+ * every render and holds no state. The registry supplies the two levels it
+ * knows; a page deeper than that declares its own chain with the real entity
+ * names via `useSetPageHeader({ crumbs })`, which is the thing the registry
+ * could never do. The browser already owns history, and its Back button is
+ * better at it than any bar we could draw.
+ *
+ * The derivation itself is in `./crumbs` so it can be run and asserted outside
+ * a React tree.
+ *
+ * `window.location.pathname` — what 0.3 read here — is a value captured once at
+ * render that never updates, so after any client-side navigation the sidebar
+ * highlight moved and the breadcrumb did not. Its crumb links were also raw
+ * `window.location.href` assignments, i.e. a full page load that threw away the
+ * SPA runtime. Both are `usePage()`-driven and `<Link>`-based now.
  */
 export function DashboardHeader({
   sidebarOpen,
@@ -121,42 +90,29 @@ export function DashboardHeader({
   const { features, homePath } = useAdminShell();
   const currentPath = useCurrentPath();
   const { header } = usePageHeader();
+
+  // `features` is a new array reference every render (see useAdminShell), and
+  // `header.crumbs` a new array on every page swap, so the memo keys on their
+  // CONTENT — otherwise every render would re-walk the nav registry even when
+  // nothing about it changed.
   const featureKey = JSON.stringify(features);
+  const declaredKey = JSON.stringify(header?.crumbs ?? null);
 
-  // `features` is a new array reference every render (see useAdminShell), so
-  // this keys on its content instead — otherwise every render would re-walk
-  // the nav registry even when nothing about it changed.
-  const resolvedLabel = useMemo(
-    () => header?.title || navRegistryLabel(currentPath, features) || fallbackLabel(currentPath),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [currentPath, featureKey, header?.title],
-  );
+  const crumbs = useMemo(() => {
+    const declared = header?.crumbs;
 
-  const [trail, setTrail] = useState<Crumb[]>([{ label: "Home", path: homePath }]);
-
-  useEffect(() => {
-    setTrail((previous) => {
-      if (currentPath === homePath) {
-        const alreadyHome =
-          previous.length === 1 && previous[0].path === homePath && previous[0].label === "Home";
-        return alreadyHome ? previous : [{ label: "Home", path: homePath }];
-      }
-
-      const last = previous[previous.length - 1];
-      if (last?.path === currentPath) {
-        // Same page as last render — only the label may have caught up (the
-        // live title arrives one effect tick after the path does).
-        return last.label === resolvedLabel
-          ? previous
-          : [...previous.slice(0, -1), { label: resolvedLabel, path: currentPath }];
-      }
-
-      const revisited = previous.findIndex((crumb) => crumb.path === currentPath);
-      if (revisited !== -1) return previous.slice(0, revisited + 1);
-
-      return [...previous, { label: resolvedLabel, path: currentPath }];
+    return crumbsFor({
+      currentPath,
+      homePath,
+      // The registry is only the FALLBACK, so it is not walked at all once the
+      // page has said where it sits. `selectNavSections` writes module state
+      // and restores it, which is cheap but not free.
+      sections: declared && declared.length > 0 ? [] : selectNavSections(features),
+      declared,
+      title: header?.title,
     });
-  }, [currentPath, homePath, resolvedLabel]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPath, homePath, featureKey, declaredKey, header?.title]);
 
   return (
     <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border bg-background px-4">
@@ -174,14 +130,25 @@ export function DashboardHeader({
 
       <Breadcrumb>
         <BreadcrumbList>
-          {trail.map((crumb, i) => {
-            const isLast = i === trail.length - 1;
+          {crumbs.map((crumb, i) => {
+            const isLast = i === crumbs.length - 1;
+
             return (
-              <span key={`${crumb.path}-${i}`} className="inline-flex items-center gap-1.5">
+              <span
+                key={`${crumb.path ?? "current"}-${i}`}
+                className="inline-flex items-center gap-1.5"
+              >
                 {i > 0 && <BreadcrumbSeparator />}
                 <BreadcrumbItem>
                   {isLast ? (
                     <BreadcrumbPage>{crumb.label}</BreadcrumbPage>
+                  ) : crumb.path === undefined ? (
+                    // A level with no page of its own is still a level: it is
+                    // rendered, and it is not a link that goes nowhere. NOT
+                    // BreadcrumbPage, which hardcodes aria-current="page" —
+                    // two of those in one trail tells a screen reader the trail
+                    // has two current pages.
+                    <span>{crumb.label}</span>
                   ) : (
                     <BreadcrumbLink asChild>
                       <Link href={crumb.path} className="transition-colors hover:text-foreground">
