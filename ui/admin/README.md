@@ -178,8 +178,12 @@ rather than "Properties".
 
 **Overflow.** The sidebar fits as many rows as the viewport allows and pushes the
 rest into a "More" popover, recalculated on resize and after
-`document.fonts.ready`. Row heights come from the `--nav-row-*` CSS variables, so
-restyling the sidebar and correcting the arithmetic happen in the same file.
+`document.fonts.ready`. Row, section-label, gap, padding and "More" heights are
+measured from the rendered sidebar, so a restyle needs no arithmetic change; the
+`--nav-row-*` CSS variables are only the fallback before anything has rendered.
+"More" sits at the foot of the nav column, so leftover space falls above it,
+never between it and the account footer. Inside the popover the rows keep their section
+headings, in the same order as the rail.
 
 ---
 

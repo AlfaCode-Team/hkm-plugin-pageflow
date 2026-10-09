@@ -81,9 +81,78 @@ function readMetrics(el: Element | null, compact: boolean): Metrics {
   };
 }
 
-const MORE_BUTTON_HEIGHT = 52;
+/** What the fit is computed from: per-row and per-section heights, plus the fixed costs. */
+interface Layout extends Metrics {
+  /** The nav's own vertical padding. */
+  padding: number;
+  /** The "More" block, margins included. */
+  more: number;
+}
+
+/**
+ * Layout read from the RENDERED sidebar, falling back to the CSS-variable
+ * metrics only for a part that is not on screen to measure.
+ *
+ * The variables were the only source before, and they drifted from what the
+ * rows actually render: a section label is 11px text plus a 4px margin
+ * (~20px) against a 28px variable, a row is 36px plus the 2px `space-y-0.5`
+ * between rows, and the "More" block is ~63px against a 52px constant. Over a
+ * dozen sections the label alone over-reserved ~75px — whole rows pushed into
+ * "More" while the space they needed sat empty above the account footer.
+ * Measuring makes the fit follow whatever a project's theme renders.
+ */
+function measureLayout(container: HTMLElement, fallback: Metrics): Layout {
+  const nav = container.querySelector<HTMLElement>(":scope > nav");
+  const px = (value: string) => {
+    const n = Number.parseFloat(value);
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  let item = 0;
+  let sectionLabel = 0;
+  let sectionGap = fallback.sectionGap;
+  let padding = NAV_PADDING;
+
+  if (nav) {
+    const navStyle = window.getComputedStyle(nav);
+    padding = px(navStyle.paddingTop) + px(navStyle.paddingBottom);
+    const gap = px(navStyle.rowGap);
+    if (gap > 0) sectionGap = gap;
+
+    const label = nav.querySelector<HTMLElement>(":scope > div > p");
+    if (label) sectionLabel = label.offsetHeight + px(window.getComputedStyle(label).marginBottom);
+
+    // The shortest row is a plain one; an expanded parent is taller and must
+    // not set the pitch. The gap is the `space-y` margin on every row after
+    // the first in a list.
+    const rows = Array.from(nav.querySelectorAll<HTMLElement>(":scope > div > ul > li"));
+    const heights = rows.map((li) => li.offsetHeight).filter((h) => h > 0);
+    if (heights.length > 0) {
+      const rowGap = rows.length > 1 ? px(window.getComputedStyle(rows[1]).marginTop) : 0;
+      item = Math.min(...heights) + rowGap;
+    }
+  }
+
+  let more = MORE_BUTTON_HEIGHT;
+  const moreBlock = container.querySelector<HTMLElement>(":scope > [data-nav-more]");
+  if (moreBlock) {
+    const style = window.getComputedStyle(moreBlock);
+    more = moreBlock.offsetHeight + px(style.marginTop) + px(style.marginBottom);
+  }
+
+  return {
+    item: item > 0 ? item : fallback.item,
+    sectionLabel: sectionLabel > 0 ? sectionLabel : fallback.sectionLabel,
+    sectionGap,
+    padding,
+    more,
+  };
+}
+
+/** Used until the "More" block has rendered once and can be measured. */
+const MORE_BUTTON_HEIGHT = 64;
 const NAV_PADDING = 16;
-const FOOTER_SAFE_BUFFER = 10;
+const FOOTER_SAFE_BUFFER = 4;
 const RESIZE_THROTTLE_MS = 150;
 
 function ExpandableChildren({ isOpen, children }: { isOpen: boolean; children: ReactNode }) {
@@ -138,22 +207,31 @@ function NavAnchor({
   );
 }
 
-function OverflowMenu({ items, activeId }: { items: NavItem[]; activeId: string }) {
+/**
+ * The rows that did not fit, under the same section headings the rail uses,
+ * so "Reports" in here still reads as part of Overview rather than as a stray
+ * entry in a flat list.
+ */
+function OverflowMenu({ sections, activeId }: { sections: NavSection[]; activeId: string }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const total = sections.reduce((sum, section) => sum + section.items.length, 0);
 
   return (
-    <div className="mb-2.5 shrink-0 border-t border-sidebar-border px-3 py-2">
+    // `mt-auto` keeps "More" at the foot of the nav column, against the
+    // account footer, so any slack left by the fit sits above it rather than
+    // as a gap below it. `data-nav-more` is what measureLayout() reads.
+    <div data-nav-more="" className="mt-auto mb-2.5 shrink-0 border-t border-sidebar-border px-3 py-2">
       <Popover>
         <PopoverTrigger asChild>
           <button
             type="button"
-            aria-label={`More navigation (${items.length} items)`}
+            aria-label={`More navigation (${total} items)`}
             className="flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-sm text-sidebar-fg hover:bg-sidebar-hover hover:text-sidebar-fg-active sidebar-transition"
           >
             <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
             <span>More</span>
             <span className="ml-auto rounded-full bg-sidebar-hover px-2 py-0.5 text-[10px] font-medium text-sidebar-fg-muted">
-              {items.length}
+              {total}
             </span>
           </button>
         </PopoverTrigger>
@@ -163,78 +241,93 @@ function OverflowMenu({ items, activeId }: { items: NavItem[]; activeId: string 
           sideOffset={12}
           className="z-100 w-60 max-h-[70vh] overflow-y-auto rounded-lg border border-border bg-popover p-1.5 shadow-xl"
         >
-          <ul className="space-y-0.5">
-            {items.map((item) => {
-              const Icon = resolveIcon(item.icon);
-              const hasChildren = (item.children?.length ?? 0) > 0;
-              const isExpanded = expandedId === item.id;
-              const isActive =
-                activeId === item.id || (item.children?.some((c) => c.id === activeId) ?? false);
-
-              const rowClass = cn(
-                "flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm transition-colors",
-                isActive
-                  ? "bg-accent text-accent-foreground font-medium"
-                  : "text-popover-foreground hover:bg-muted",
-              );
-
+          <div className="space-y-2">
+            {sections.map((section) => {
+              const headingId = `sidebar-more-${section.label.replace(/\s+/g, "-").toLowerCase()}`;
               return (
-                <li key={item.id}>
-                  {hasChildren ? (
-                    <button
-                      type="button"
-                      onClick={() => setExpandedId((prev) => (prev === item.id ? null : item.id))}
-                      aria-expanded={isExpanded}
-                      className={rowClass}
-                    >
-                      <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-                      <span className="flex-1 truncate">{item.label}</span>
-                      {item.badge && <NavBadgeChip badge={item.badge} />}
-                      <ChevronRight
-                        aria-hidden="true"
-                        className={cn(
-                          "h-3.5 w-3.5 shrink-0 transition-transform duration-200",
-                          isExpanded && "rotate-90",
-                        )}
-                      />
-                    </button>
-                  ) : (
-                    <NavAnchor href={item.path} isActive={isActive} className={rowClass}>
-                      <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-                      <span className="flex-1 truncate">{item.label}</span>
-                      {item.badge && <NavBadgeChip badge={item.badge} />}
-                    </NavAnchor>
-                  )}
+                <div key={section.label}>
+                  <p
+                    id={headingId}
+                    className="px-2.5 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground"
+                  >
+                    {section.label}
+                  </p>
+                  <ul className="space-y-0.5" aria-labelledby={headingId}>
+                    {section.items.map((item) => {
+                      const Icon = resolveIcon(item.icon);
+                      const hasChildren = (item.children?.length ?? 0) > 0;
+                      const isExpanded = expandedId === item.id;
+                      const isActive =
+                        activeId === item.id || (item.children?.some((c) => c.id === activeId) ?? false);
 
-                  {hasChildren && (
-                    <ExpandableChildren isOpen={isExpanded}>
-                      <ul className="ml-4 mt-0.5 space-y-0.5 border-l border-border pl-2.5">
-                        {item.children!
-                          .filter((child) => !child.hidden)
-                          .map((child) => (
-                            <li key={child.id}>
-                              <NavAnchor
-                                href={child.path}
-                                isActive={activeId === child.id}
+                      const rowClass = cn(
+                        "flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm transition-colors",
+                        isActive
+                          ? "bg-accent text-accent-foreground font-medium"
+                          : "text-popover-foreground hover:bg-muted",
+                      );
+
+                      return (
+                        <li key={item.id}>
+                          {hasChildren ? (
+                            <button
+                              type="button"
+                              onClick={() => setExpandedId((prev) => (prev === item.id ? null : item.id))}
+                              aria-expanded={isExpanded}
+                              className={rowClass}
+                            >
+                              <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                              <span className="flex-1 truncate">{item.label}</span>
+                              {item.badge && <NavBadgeChip badge={item.badge} />}
+                              <ChevronRight
+                                aria-hidden="true"
                                 className={cn(
-                                  "flex w-full items-center gap-1 rounded-md px-2 py-1.5 text-left text-sm transition-colors",
-                                  activeId === child.id
-                                    ? "text-accent-foreground font-medium"
-                                    : "text-muted-foreground hover:text-popover-foreground",
+                                  "h-3.5 w-3.5 shrink-0 transition-transform duration-200",
+                                  isExpanded && "rotate-90",
                                 )}
-                              >
-                                <span className="flex-1 truncate">{child.label}</span>
-                                {child.badge && <NavBadgeChip badge={child.badge} />}
-                              </NavAnchor>
-                            </li>
-                          ))}
-                      </ul>
-                    </ExpandableChildren>
-                  )}
-                </li>
+                              />
+                            </button>
+                          ) : (
+                            <NavAnchor href={item.path} isActive={isActive} className={rowClass}>
+                              <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                              <span className="flex-1 truncate">{item.label}</span>
+                              {item.badge && <NavBadgeChip badge={item.badge} />}
+                            </NavAnchor>
+                          )}
+
+                          {hasChildren && (
+                            <ExpandableChildren isOpen={isExpanded}>
+                              <ul className="ml-4 mt-0.5 space-y-0.5 border-l border-border pl-2.5">
+                                {item.children!
+                                  .filter((child) => !child.hidden)
+                                  .map((child) => (
+                                    <li key={child.id}>
+                                      <NavAnchor
+                                        href={child.path}
+                                        isActive={activeId === child.id}
+                                        className={cn(
+                                          "flex w-full items-center gap-1 rounded-md px-2 py-1.5 text-left text-sm transition-colors",
+                                          activeId === child.id
+                                            ? "text-accent-foreground font-medium"
+                                            : "text-muted-foreground hover:text-popover-foreground",
+                                        )}
+                                      >
+                                        <span className="flex-1 truncate">{child.label}</span>
+                                        {child.badge && <NavBadgeChip badge={child.badge} />}
+                                      </NavAnchor>
+                                    </li>
+                                  ))}
+                              </ul>
+                            </ExpandableChildren>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
               );
             })}
-          </ul>
+          </div>
         </PopoverContent>
       </Popover>
     </div>
@@ -286,30 +379,39 @@ export function SidebarNav() {
   );
 
   const [visibleSections, setVisibleSections] = useState<NavSection[]>(allSections);
-  const [overflowItems, setOverflowItems] = useState<NavItem[]>([]);
+  // Overflowed rows keep their section, so the "More" menu can show the same
+  // grouping the rail does instead of one long undifferentiated list.
+  const [overflowSections, setOverflowSections] = useState<NavSection[]>([]);
 
   const calculateOverflow = useCallback(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    const metrics = readMetrics(container, isCompactScreen);
+    const metrics = measureLayout(container, readMetrics(container, isCompactScreen));
     const sectionShellHeight = (sectionIndex: number) =>
       (sectionIndex > 0 ? metrics.sectionGap : 0) + metrics.sectionLabel;
 
     const availableHeight = Math.max(
       0,
-      container.clientHeight - NAV_PADDING - FOOTER_SAFE_BUFFER,
+      container.clientHeight - metrics.padding - FOOTER_SAFE_BUFFER,
     );
     let usedHeight = 0;
     const visible: NavSection[] = [];
-    const overflow: NavItem[] = [];
+    const overflow: NavSection[] = [];
+    /** Append to the overflow, continuing the last group when it is the same section. */
+    const toOverflow = (label: string, items: NavItem[]) => {
+      if (items.length === 0) return;
+      const last = overflow[overflow.length - 1];
+      if (last && last.label === label) last.items.push(...items);
+      else overflow.push({ label, items: [...items] });
+    };
     let cutReached = false;
 
     for (let si = 0; si < allSections.length; si++) {
       const section = allSections[si];
 
       if (cutReached) {
-        overflow.push(...section.items);
+        toOverflow(section.label, section.items);
         continue;
       }
 
@@ -330,7 +432,7 @@ export function SidebarNav() {
           continue;
         }
 
-        overflow.push(item, ...section.items.slice(ii + 1));
+        toOverflow(section.label, section.items.slice(ii));
         cutReached = true;
         break;
       }
@@ -341,8 +443,9 @@ export function SidebarNav() {
 
     // The "More" button itself takes room. Reclaim rows until it fits.
     if (finalOverflow.length > 0) {
-      const navLimit = Math.max(0, availableHeight - MORE_BUTTON_HEIGHT);
-      const reclaimed: NavItem[] = [];
+      const navLimit = Math.max(0, availableHeight - metrics.more);
+      // Rows taken back off the rail, latest first, each with its section.
+      const reclaimed: { label: string; item: NavItem }[] = [];
 
       while (usedHeight > navLimit && finalVisible.length > 0) {
         const lastSection = finalVisible[finalVisible.length - 1];
@@ -352,7 +455,7 @@ export function SidebarNav() {
           usedHeight -= sectionShellHeight(finalVisible.length);
           continue;
         }
-        reclaimed.push(lastItem);
+        reclaimed.push({ label: lastSection.label, item: lastItem });
         usedHeight -= metrics.item;
 
         if (lastSection.items.length === 0) {
@@ -361,13 +464,25 @@ export function SidebarNav() {
         }
       }
 
-      if (reclaimed.length > 0) finalOverflow = [...reclaimed.reverse(), ...finalOverflow];
+      if (reclaimed.length > 0) {
+        // Rebuild in rail order: the reclaimed rows come first, and a reclaimed
+        // row from the section the cut fell in joins that section's group.
+        const rebuilt: NavSection[] = [];
+        const add = (label: string, items: NavItem[]) => {
+          const last = rebuilt[rebuilt.length - 1];
+          if (last && last.label === label) last.items.push(...items);
+          else rebuilt.push({ label, items: [...items] });
+        };
+        for (const { label, item } of reclaimed.reverse()) add(label, [item]);
+        for (const group of finalOverflow) add(group.label, group.items);
+        finalOverflow = rebuilt;
+      }
     }
 
     // Runs on every observed layout change, so it walks ids rather than
     // serialising the whole tree.
     setVisibleSections((prev) => (sameSections(prev, finalVisible) ? prev : finalVisible));
-    setOverflowItems((prev) => (sameItems(prev, finalOverflow) ? prev : finalOverflow));
+    setOverflowSections((prev) => (sameSections(prev, finalOverflow) ? prev : finalOverflow));
   }, [allSections, isCompactScreen]);
 
   useEffect(() => {
@@ -582,7 +697,7 @@ export function SidebarNav() {
         })}
       </nav>
 
-      {overflowItems.length > 0 && <OverflowMenu items={overflowItems} activeId={activeId} />}
+      {overflowSections.length > 0 && <OverflowMenu sections={overflowSections} activeId={activeId} />}
     </div>
   );
 }
