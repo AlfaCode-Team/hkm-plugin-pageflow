@@ -24,6 +24,8 @@ use AlfacodeTeam\PhpServicePlatform\Kernel\Http\Response;
  *   - shared data (see share()/mergeShared()) is merged into every page's props,
  *     page props winning on key collision;
  *   - partial reloads honour X-Pageflow-Partial-Data / -Except / -Component;
+ *   - a prop given as a Closure is LAZY: called only if the response carries
+ *     it (see resolveLazy()), so a partial reload pays only for what it asks;
  *   - loadPage:false navigations rewrite url/component from
  *     X-Pageflow-Url / X-Pageflow-Page.
  *
@@ -147,7 +149,7 @@ final class PageflowResponder
         // GET /pageflow/csrf.
         $csrf = $this->csrfFor($request);
 
-        $props = $this->resolvePartial($request, $component, $props);
+        $props = self::resolveLazy($this->resolvePartial($request, $component, $props));
 
         $url = $this->fullUrl($request);
         if (!$loadPage) {
@@ -260,6 +262,31 @@ final class PageflowResponder
         }
         if ($except !== []) {
             $props = array_diff_key($props, array_flip($except));
+        }
+
+        return $props;
+    }
+
+    /**
+     * Lazy props: a top-level prop given as a Closure is called here, AFTER the
+     * partial filter, so a prop the response leaves out is never computed.
+     * `router.reload({ only: ['summary'] })` then runs the queries behind
+     * `summary` and nothing else, where an eagerly built array runs them all
+     * and throws most of the work away.
+     *
+     * Top level only, and only a Closure: an invokable object or a nested
+     * closure is data, sent as it always was. Before this, a Closure prop
+     * serialised to `{}`, so no page relied on passing one.
+     *
+     * @param array<string,mixed> $props
+     * @return array<string,mixed>
+     */
+    private static function resolveLazy(array $props): array
+    {
+        foreach ($props as $key => $value) {
+            if ($value instanceof \Closure) {
+                $props[$key] = $value();
+            }
         }
 
         return $props;

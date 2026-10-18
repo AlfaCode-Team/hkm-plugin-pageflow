@@ -1,6 +1,6 @@
 {
     "name": "pageflow",
-    "version": "1.7.0",
+    "version": "1.8.0",
     "kernel": "^1.19.0",
     "solves": "http.pageflow",
     "type": "module",

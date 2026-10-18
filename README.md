@@ -66,6 +66,7 @@ createPageflowApp({
 |---|---|---|
 | Link between pages | `<Link href>` | route → controller |
 | Read controller data | `usePage()` | `render(...)` props |
+| Reload some props cheaply | `router.reload({ only })` | lazy props (a `Closure`) |
 | Form + validation errors | `useForm()` / `<Form>` | DTO throws `ValidationException` |
 | Live validation | `usePrecognition` / `<Form validateOn>` | `pageflow_precognition()` |
 | Realtime updates | `useReactiveProps` | `PageflowChannel::touch()` |
@@ -76,6 +77,25 @@ createPageflowApp({
 | Typed props | `usePage<T>()` | `hkm pageflow:types` |
 | Your own error dialog | `createPageflowApp({ errorModal })` | kernel error envelope |
 | Sign out | `router.logout()` | `/auth/logout` redirects the form back |
+
+## Lazy props — pay only for what a reload asks for
+
+A prop given as a `Closure` is called only if the response carries it. A full
+page load calls every one; a partial reload (`router.reload({ only: [...] })`,
+`X-Pageflow-Partial-Data`) calls only the ones it names, so the queries behind
+the others never run.
+
+```php
+return $this->pageflow->render($request, 'Edition/Show', 'app', props: [
+    'edition'     => $edition,                          // cheap: always sent
+    'summary'     => fn (): array => $this->summary($id),     // runs only when sent
+    'votesByHour' => fn (): array => $this->votesByHour($id),
+]);
+```
+
+Top-level props only, and only a `Closure`: an invokable object or a closure
+nested inside an array is plain data. Without this, a partial reload filters
+an array that was already built, so it saves bytes but not work.
 
 ## SEO — the reserved `seoHead` prop
 

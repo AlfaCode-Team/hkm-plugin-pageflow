@@ -138,6 +138,44 @@ final class PageflowResponderTest extends TestCase
         $this->assertSame(['a' => 1, 'b' => 2], (array) json_decode($response->body(), true)['props']);
     }
 
+    public function test_a_closure_prop_is_called_and_sent_as_its_value(): void
+    {
+        $response = $this->responder()->render(
+            $this->request(['X-Pageflow' => 'true']),
+            'Users/Index', 'admin',
+            ['a' => static fn (): array => ['n' => 1], 'b' => 2],
+        );
+
+        $this->assertSame(['a' => ['n' => 1], 'b' => 2], json_decode($response->body(), true)['props']);
+    }
+
+    public function test_a_partial_reload_never_calls_a_lazy_prop_it_leaves_out(): void
+    {
+        $called = [];
+        $response = $this->responder()->render(
+            $this->request([
+                'X-Pageflow' => 'true',
+                'X-Pageflow-Partial-Data' => 'a',
+                'X-Pageflow-Partial-Component' => 'Users/Index',
+            ]),
+            'Users/Index', 'admin',
+            [
+                'a' => static function () use (&$called): int { $called[] = 'a'; return 1; },
+                'b' => static function () use (&$called): int { $called[] = 'b'; return 2; },
+            ],
+        );
+
+        $this->assertSame(['a' => 1], (array) json_decode($response->body(), true)['props']);
+        $this->assertSame(['a'], $called, 'the left-out prop was never computed');
+    }
+
+    public function test_a_full_page_load_calls_every_lazy_prop(): void
+    {
+        $response = $this->responder()->render($this->request(), 'Users/Index', 'admin', ['a' => static fn (): int => 7]);
+
+        $this->assertStringContainsString('"props":{"a":7}', $response->body());
+    }
+
     public function test_partial_reload_except_drops_named_props(): void
     {
         $response = $this->responder()->render(
