@@ -216,6 +216,41 @@ explains it instead. A listener on the cancellable
 `pageflow:invalid` document event still runs first and can suppress the overlay
 altogether.
 
+## Content-Security-Policy nonce (opt-in)
+
+The stock layout emits inline scripts (`window.initialPage`, the React Fast
+Refresh preamble and `@vite/client` in dev), so a strict
+`script-src 'self' 'nonce-…'` needs a per-request nonce. Nothing changes until
+you ask for one; with no nonce the HTML is byte-identical to before.
+
+**Controller-driven** (you build the header):
+
+```php
+$nonce    = PageflowResponder::mintNonce();               // base64 of 16 random bytes
+$request  = $request->withAttribute('csp_nonce', $nonce);
+$response = $this->pageflow->render($request, 'Home', 'app', $props);
+return $response->withHeader('Content-Security-Policy', "script-src 'self' 'nonce-{$nonce}'");
+```
+
+**Config-driven**: set `PAGEFLOW_CSP_HEADER` to a policy containing `{nonce}`:
+
+```
+PAGEFLOW_CSP_HEADER="default-src 'self'; script-src 'self' 'nonce-{nonce}'"
+```
+
+Every HTML response then mints a nonce (or reuses the request's `csp_nonce`
+attribute), renders it into the layout and sends the policy with `{nonce}`
+substituted. JSON (`X-Pageflow`) responses never carry it. A `csp_nonce` value
+outside the base64 alphabet is ignored.
+
+The nonce goes on every inline `<script>`, on the tags ViteManifest emits
+(scripts, stylesheets, preloads, via `withNonce()`) and on the fallback bundle
+`<script src>`. The layout receives it as `$cspNonce` (`''` when off); a project
+layout that overrides the stock one should do the same:
+`$bootPage->renderScript($cspNonce)` and
+`nonce="<?= htmlspecialchars($cspNonce, ENT_QUOTES, 'UTF-8') ?>"` on its own
+inline tags. Inline `style="…"` attributes are not covered by a nonce.
+
 ## Security invariants (do not regress)
 
 - **Push signals, pull data** — the reactive channel emits prop key *names* only;

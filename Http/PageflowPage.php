@@ -74,8 +74,21 @@ final readonly class PageflowPage
      *   Pageflow client boots from the data-page attribute (see mount()). Kept
      *   only for backward compatibility with old bundles.
      */
-    public function renderScript(): string
+    public function renderScript(?string $nonce = null): string
     {
-        return '<script>window.initialPage = ' . $this->toJson() . ';</script>';
+        $attr = ($nonce !== null && $nonce !== '')
+            ? ' nonce="' . htmlspecialchars($nonce, ENT_QUOTES, 'UTF-8') . '"'
+            : '';
+
+        // Inside a <script> element HTML escaping does not apply, so a prop
+        // holding "</script>" would end the element early and run whatever
+        // follows. JSON_HEX_TAG writes < and > as < / >: the same
+        // value to the JSON parser, never markup to the HTML parser.
+        $json = json_encode(
+            $this->toArray(),
+            JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP,
+        );
+
+        return '<script' . $attr . '>window.initialPage = ' . $json . ';</script>';
     }
 }

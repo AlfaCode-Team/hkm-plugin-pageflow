@@ -13,6 +13,9 @@
  *   @var string                              $FLOW_APP_ID  Root element id (default 'app').
  *   @var string                              $FLOW_SURFACE The `hkm ui` surface to boot.
  *   @var string|null                         $FLOW_VITE_ENTRY Optional Vite entry override.
+ *   @var string                              $cspNonce     CSP nonce for this response ('' = off).
+ *                                                          Put it on every inline <script>/<style>
+ *                                                          you add: nonce="<?= htmlspecialchars($cspNonce) ?>".
  *
  * BOOT MODE: this layout ships in LEGACY mode. It publishes the page object as
  * the `window.initialPage` global ($FLOW_PAGE->renderScript() in <head>) and
@@ -86,6 +89,12 @@ $entry   = (string) (($FLOW_VITE_ENTRY ?? null) ?: ($props['viteEntry'] ?? "src/
 // Cache-bust the fallback bundle with the same version the client checks (only
 // used when ViteManifest is not enabled).
 $assetVersion = rawurlencode($FLOW_PAGE->version);
+
+// CSP nonce ('' when off — output is then identical to a nonce-less build).
+$nonceAttr = $cspNonce !== '' ? ' nonce="' . htmlspecialchars($cspNonce, ENT_QUOTES, 'UTF-8') . '"' : '';
+// ViteManifest copy that stamps the nonce on every tag it emits (@vite/client,
+// the React Fast Refresh inline script, hashed <script>/<link>/preloads).
+$viteSvc = ($cspNonce !== '' && function_exists('vite_instance')) ? vite_instance($surface)->withNonce($cspNonce) : null;
 ?>
 <!DOCTYPE html>
 <html lang="<?= $locale ?>">
@@ -111,13 +120,13 @@ $assetVersion = rawurlencode($FLOW_PAGE->version);
 
     <?php if (function_exists('vite')): ?>
         <?php /* React Fast Refresh preamble (dev/HMR only; empty string in prod). */ ?>
-        <?= vite_react_refresh($surface) ?>
+        <?= $viteSvc !== null ? $viteSvc->reactRefresh() : vite_react_refresh($surface) ?>
         <?php /* Hashed <link>/<script> (+ preloads) in prod, or the dev-server URLs + @vite/client under HMR. Emits the surface's CSS too. */ ?>
-        <?= vite($entry, $surface) ?>
+        <?= $viteSvc !== null ? $viteSvc->render($entry) : vite($entry, $surface) ?>
     <?php else: ?>
         <?php /* Fallback when ViteManifest is not enabled: static bundle paths. */ ?>
         <link rel="stylesheet" href="/build/<?= htmlspecialchars($surface, ENT_QUOTES, 'UTF-8') ?>/index.css?v=<?= $assetVersion ?>">
-        <script type="module" src="/build/<?= htmlspecialchars($surface, ENT_QUOTES, 'UTF-8') ?>/index.js?v=<?= $assetVersion ?>" defer></script>
+        <script type="module" src="/build/<?= htmlspecialchars($surface, ENT_QUOTES, 'UTF-8') ?>/index.js?v=<?= $assetVersion ?>"<?= $nonceAttr ?> defer></script>
     <?php endif; ?>
 
     <?php
@@ -128,7 +137,7 @@ $assetVersion = rawurlencode($FLOW_PAGE->version);
      * boots from the root element's data-page attribute instead (see the body).
      * $bootPage is $FLOW_PAGE minus the server-only `seoHead` prop.
      */
-    echo $bootPage->renderScript();
+    echo $bootPage->renderScript($cspNonce);
     ?>
 </head>
 <body>

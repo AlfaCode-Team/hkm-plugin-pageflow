@@ -50,12 +50,19 @@ final class PageflowResponder
      *                           for the current request so the client can echo it
      *                           back in the X-CSRF-Token header. Null = no token
      *                           (safe/GET-only apps).
+     * @param string $cspHeader opt-in Content-Security-Policy template containing
+     *                           `{nonce}` (PAGEFLOW_CSP_HEADER). When set, every HTML
+     *                           response mints a nonce (unless the request already
+     *                           carries a `csp_nonce` attribute), renders it onto the
+     *                           layout's inline scripts and sends the policy with
+     *                           `{nonce}` replaced. Empty = no header, no minting.
      */
     public function __construct(
         private readonly string $version,
         private readonly string $layoutPath,
         private readonly string $appId = 'app',
         private readonly ?\Closure $csrfResolver = null,
+        private readonly string $cspHeader = '',
     ) {
     }
 
@@ -94,6 +101,28 @@ final class PageflowResponder
         }
 
         return (string) ($this->csrfResolver)($request);
+    }
+
+    /** A fresh CSP nonce: base64 of 16 random bytes. */
+    public static function mintNonce(): string
+    {
+        return base64_encode(random_bytes(16));
+    }
+
+    /**
+     * The nonce this request renders with: the app's `csp_nonce` request
+     * attribute, else a fresh one when a CSP header template is configured,
+     * else '' (feature off). A value outside the base64 alphabet is ignored —
+     * it would otherwise land in a response header.
+     */
+    private function nonceFor(Request $request): string
+    {
+        $given = $request->attribute('csp_nonce');
+        if (is_string($given) && preg_match('/^[A-Za-z0-9+\/=_-]{8,}$/', $given) === 1) {
+            return $given;
+        }
+
+        return $this->cspHeader !== '' ? self::mintNonce() : '';
     }
 
     /** Register a single shared prop present on every rendered page. */
@@ -168,7 +197,7 @@ final class PageflowResponder
 
         return $this->isPageflow($request)
             ? $this->jsonResponse($page, $cacheable)
-            : $this->htmlResponse($page, $csrf, $surface, $viteEntry, $cacheable);
+            : $this->htmlResponse($page, $csrf, $surface, $viteEntry, $cacheable, $this->nonceFor($request));
     }
 
     /**
@@ -199,13 +228,17 @@ final class PageflowResponder
         return Response::json($page->toArray(), 200, $headers);
     }
 
-    private function htmlResponse(PageflowPage $page, string $csrf, string $surface, ?string $viteEntry, bool $cacheable = false): Response
+    private function htmlResponse(PageflowPage $page, string $csrf, string $surface, ?string $viteEntry, bool $cacheable = false, string $nonce = ''): Response
     {
         $html = ($this->layoutPath !== '' && is_file($this->layoutPath))
-            ? $this->renderLayout($this->layoutPath, $page, $csrf, $surface, $viteEntry)
+            ? $this->renderLayout($this->layoutPath, $page, $csrf, $surface, $viteEntry, $nonce)
             : $this->defaultDocument($page, $csrf);
 
         $response = Response::text($html, 200)->withHeader('Content-Type', 'text/html; charset=UTF-8');
+
+        if ($nonce !== '' && $this->cspHeader !== '') {
+            $response = $response->withHeader('Content-Security-Policy', str_replace('{nonce}', $nonce, $this->cspHeader));
+        }
 
         return $cacheable ? $response->withHeader('X-Pageflow-Cache', '1') : $response;
     }
@@ -214,9 +247,9 @@ final class PageflowResponder
      * Render a PHP layout template, capturing its output with ob_start. The
      * template runs in an isolated scope with only the Pageflow variables
      * available ($FLOW_PAGE, $FLOW_CSRF, $FLOW_APP_ID, $FLOW_SURFACE,
-     * $FLOW_VITE_ENTRY) — no globals leak in.
+     * $FLOW_VITE_ENTRY, $cspNonce) — no globals leak in.
      */
-    private function renderLayout(string $path, PageflowPage $page, string $csrf, string $surface, ?string $viteEntry): string
+    private function renderLayout(string $path, PageflowPage $page, string $csrf, string $surface, ?string $viteEntry, string $nonce = ''): string
     {
         $capture = static function (
             string $__path,
@@ -224,7 +257,8 @@ final class PageflowResponder
             string $FLOW_CSRF,
             string $FLOW_APP_ID,
             string $FLOW_SURFACE,
-            ?string $FLOW_VITE_ENTRY
+            ?string $FLOW_VITE_ENTRY,
+            string $cspNonce
         ): string {
             ob_start();
             try {
@@ -236,7 +270,7 @@ final class PageflowResponder
             return ob_get_clean() ?: '';
         };
 
-        return $capture($path, $page, $csrf, $this->appId, $surface, $viteEntry);
+        return $capture($path, $page, $csrf, $this->appId, $surface, $viteEntry, $nonce);
     }
 
     /**

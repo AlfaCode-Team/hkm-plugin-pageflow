@@ -364,4 +364,104 @@ final class PageflowResponderTest extends TestCase
     {
         $this->assertSame(302, $this->redirectedVisit('https://organizer.example.test/', pageflow: false)->status());
     }
+
+    public static function setUpBeforeClass(): void
+    {
+        // The stock layout calls vite(); give ViteManifest a throwaway build.
+        $dir = sys_get_temp_dir() . '/pf_vite_' . bin2hex(random_bytes(4));
+        mkdir($dir . '/build', 0777, true);
+        file_put_contents($dir . '/build/manifest-admin.json', json_encode([
+            'src/surfaces/admin/index.tsx' => ['file' => 'assets/app.js', 'isEntry' => true],
+        ]));
+        $_ENV['VITE_PUBLIC_PATH'] = $dir;
+    }
+
+    private function stockResponder(string $cspHeader = ''): PageflowResponder
+    {
+        return new PageflowResponder(
+            version: 'v1',
+            layoutPath: dirname(__DIR__) . '/resources/layouts/app.php',
+            appId: 'app',
+            cspHeader: $cspHeader,
+        );
+    }
+
+    public function test_no_nonce_leaves_output_without_nonce_and_without_csp_header(): void
+    {
+        $res = $this->stockResponder()->render($this->request(), 'Users/Index', 'admin');
+
+        $this->assertStringNotContainsString('nonce', $res->body());
+        $this->assertStringContainsString('<script>window.initialPage =', $res->body());
+        $this->assertNull(($res->headers()['Content-Security-Policy'] ?? null));
+    }
+
+    public function test_request_nonce_is_stamped_on_every_inline_script_and_escaped(): void
+    {
+        $req = $this->request()->withAttribute('csp_nonce', 'abcdEFGH12345678==');
+        $body = $this->stockResponder()->render($req, 'Users/Index', 'admin')->body();
+
+        $this->assertStringContainsString('<script nonce="abcdEFGH12345678==">window.initialPage =', $body);
+        // every <script ...> without src carries the nonce
+        preg_match_all('/<script\b(?![^>]*\bsrc=)[^>]*>/', $body, $m);
+        $this->assertNotEmpty($m[0]);
+        foreach ($m[0] as $tag) {
+            $this->assertStringContainsString('nonce="abcdEFGH12345678=="', $tag);
+        }
+    }
+
+    public function test_page_render_script_escapes_the_nonce(): void
+    {
+        $page = new PageflowPage('A', [], '/', 'v1');
+        $this->assertStringStartsWith('<script nonce="a&quot;b">', $page->renderScript('a"b'));
+        $this->assertStringStartsWith('<script>', $page->renderScript());
+    }
+
+    public function test_page_render_script_cannot_be_closed_by_a_prop(): void
+    {
+        $page = new PageflowPage('A', ['bio' => '</script><script>alert(1)</script> & co'], '/', 'v1');
+        $html = $page->renderScript();
+
+        // Exactly one element: the prop's "</script>" never reaches the HTML parser.
+        $this->assertSame(1, substr_count($html, '</script>'));
+        $this->assertStringContainsString('</script>', $html);
+
+        // And the value is unchanged once the JSON is parsed back.
+        $json = substr($html, strlen('<script>window.initialPage = '), -strlen(';</script>'));
+        $this->assertSame('</script><script>alert(1)</script> & co', json_decode($json, true)['props']['bio']);
+    }
+
+    public function test_configured_header_mints_nonce_and_matches_the_layout(): void
+    {
+        $res = $this->stockResponder("script-src 'self' 'nonce-{nonce}'")
+            ->render($this->request(), 'Users/Index', 'admin');
+
+        $csp = (string) ($res->headers()['Content-Security-Policy'] ?? null);
+        $this->assertSame(1, preg_match("/'nonce-([A-Za-z0-9+\/=]{24})'/", $csp, $m));
+        $this->assertStringContainsString('<script nonce="' . $m[1] . '">', $res->body());
+    }
+
+    public function test_configured_header_reuses_the_app_nonce(): void
+    {
+        $req = $this->request()->withAttribute('csp_nonce', 'abcdEFGH12345678==');
+        $res = $this->stockResponder("script-src 'nonce-{nonce}'")->render($req, 'X', 'admin');
+
+        $this->assertSame("script-src 'nonce-abcdEFGH12345678=='", ($res->headers()['Content-Security-Policy'] ?? null));
+    }
+
+    public function test_invalid_nonce_attribute_is_ignored(): void
+    {
+        $req = $this->request()->withAttribute('csp_nonce', "x\r\nSet-Cookie: a");
+        $res = $this->stockResponder("script-src 'nonce-{nonce}'")->render($req, 'X', 'admin');
+
+        $this->assertStringNotContainsString('Set-Cookie', (string) ($res->headers()['Content-Security-Policy'] ?? null));
+    }
+
+    public function test_json_response_is_unaffected_by_nonce(): void
+    {
+        $req = $this->request(['X-Pageflow' => 'true'])->withAttribute('csp_nonce', 'abcdEFGH12345678==');
+        $res = $this->stockResponder("script-src 'nonce-{nonce}'")->render($req, 'X', 'admin');
+
+        $this->assertNull(($res->headers()['Content-Security-Policy'] ?? null));
+        $this->assertStringNotContainsString('abcdEFGH', $res->body());
+    }
 }

@@ -1,6 +1,6 @@
 {
     "name": "pageflow",
-    "version": "1.8.0",
+    "version": "1.9.0",
     "kernel": "^1.19.0",
     "solves": "http.pageflow",
     "type": "module",
@@ -38,6 +38,7 @@
         { "key": "PAGEFLOW_STREAM_INTERVAL",    "type": "int", "required": false },
         { "key": "PAGEFLOW_STREAM_MAX_SECONDS", "type": "int", "required": false },
         { "key": "PAGEFLOW_PRECOGNITION_ROLLBACK", "type": "bool", "required": false },
+        { "key": "PAGEFLOW_CSP_HEADER",      "type": "string", "required": false },
         { "key": "VITE_SURFACE", "type": "string", "required": false, "default": "admin" }
     ]
 }

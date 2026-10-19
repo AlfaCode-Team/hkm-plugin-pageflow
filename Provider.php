@@ -92,6 +92,7 @@ final class Provider implements ModuleContract
                 layoutPath:   $layoutPath,
                 appId:        env('PAGEFLOW_APP_ID') ?: 'app',
                 csrfResolver: $csrfResolver,
+                cspHeader:    (string) (env('PAGEFLOW_CSP_HEADER') ?: ''),
             );
         });
 
