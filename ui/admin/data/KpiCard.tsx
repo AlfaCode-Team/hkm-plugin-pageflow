@@ -30,22 +30,23 @@ export function KpiCard({
   className,
 }: KpiCardProps) {
   return (
-    <div className={cn("rounded-xl border border-border bg-card p-5 shadow-sm", className)}>
-      <div className="flex items-center justify-between">
-        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+    // Compact on a phone, where two cards share a row.
+    <div className={cn("min-w-0 rounded-xl border border-border bg-card p-3.5 shadow-sm sm:p-5", className)}>
+      <div className="flex items-center justify-between gap-2">
+        <p className="min-w-0 truncate text-xs font-medium uppercase tracking-wider text-muted-foreground" title={label}>
           {label}
         </p>
         {Icon && (
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+          <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary sm:size-8">
             <Icon className="h-4 w-4" aria-hidden="true" />
           </div>
         )}
       </div>
 
-      <p className="mt-2 text-2xl font-bold tabular-nums tracking-tight">{value}</p>
+      <p className="mt-2 truncate text-xl font-bold tabular-nums tracking-tight sm:text-2xl">{value}</p>
 
       {(change || description) && (
-        <div className="mt-1 flex items-center gap-1 text-xs">
+        <div className="mt-1 flex flex-wrap items-center gap-1 text-xs">
           {change && trend === "up" && (
             <ArrowUpRight className="h-3.5 w-3.5 text-emerald-500" aria-hidden="true" />
           )}

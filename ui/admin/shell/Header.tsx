@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Menu, PanelLeft } from "lucide-react";
 import { Link } from "@pageflow/react";
+import { cn } from "@lib/utils";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -128,30 +129,44 @@ export function DashboardHeader({
 
       <div className="h-5 w-px bg-border" />
 
-      <Breadcrumb>
-        <BreadcrumbList>
+      {/* One line at every width. The trail used to wrap, and on a phone a
+          long event name pushed "Home / Events" out of the 48px bar. Below
+          `sm` only the parent and the current page are drawn; every label is
+          capped and ends in "…", the current one taking what is left. */}
+      <Breadcrumb className="min-w-0 flex-1">
+        <BreadcrumbList className="flex-nowrap overflow-hidden">
           {crumbs.map((crumb, i) => {
             const isLast = i === crumbs.length - 1;
 
             return (
               <span
                 key={`${crumb.path ?? "current"}-${i}`}
-                className="inline-flex items-center gap-1.5"
+                className={cn(
+                  "items-center gap-1.5",
+                  isLast ? "inline-flex min-w-0" : "shrink-0",
+                  !isLast && (i === crumbs.length - 2 ? "inline-flex" : "hidden sm:inline-flex"),
+                )}
               >
-                {i > 0 && <BreadcrumbSeparator />}
-                <BreadcrumbItem>
+                {i > 0 && (
+                  // On a phone the parent is the first crumb drawn, so its
+                  // separator would point at nothing.
+                  <BreadcrumbSeparator className={i === crumbs.length - 2 ? "hidden sm:block" : undefined} />
+                )}
+                <BreadcrumbItem className={cn(isLast ? "min-w-0" : "max-w-28 sm:max-w-48")}>
                   {isLast ? (
-                    <BreadcrumbPage>{crumb.label}</BreadcrumbPage>
+                    <BreadcrumbPage className="block truncate" title={crumb.label}>
+                      {crumb.label}
+                    </BreadcrumbPage>
                   ) : crumb.path === undefined ? (
                     // A level with no page of its own is still a level: it is
                     // rendered, and it is not a link that goes nowhere. NOT
                     // BreadcrumbPage, which hardcodes aria-current="page" —
                     // two of those in one trail tells a screen reader the trail
                     // has two current pages.
-                    <span>{crumb.label}</span>
+                    <span className="truncate">{crumb.label}</span>
                   ) : (
                     <BreadcrumbLink asChild>
-                      <Link href={crumb.path} className="transition-colors hover:text-foreground">
+                      <Link href={crumb.path} title={crumb.label} className="truncate transition-colors hover:text-foreground">
                         {crumb.label}
                       </Link>
                     </BreadcrumbLink>
@@ -163,9 +178,14 @@ export function DashboardHeader({
         </BreadcrumbList>
       </Breadcrumb>
 
-      <div className="ml-auto flex items-center gap-3">
+      <div className="ml-auto flex shrink-0 items-center gap-3">
         {actions}
-        {clock && <LiveClock />}
+        {/* The phone's own status bar already shows the time. */}
+        {clock && (
+          <div className="hidden sm:block">
+            <LiveClock />
+          </div>
+        )}
       </div>
     </header>
   );

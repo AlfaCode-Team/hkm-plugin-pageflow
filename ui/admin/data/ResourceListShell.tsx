@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, ListFilter, Plus, Search } from "lucide-reac
 import { Button } from "@ui/button";
 import { Card, CardContent } from "@ui/card";
 import { Input } from "@ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@ui/select";
 import { cn } from "@lib/utils";
 
 /**
@@ -26,28 +27,31 @@ export interface StatCard {
 
 export function StatStrip({ cards }: { cards: StatCard[] }) {
   return (
+    // Two to a row on a phone: one per row stacked four full-width cards, a
+    // whole screen of numbers before the list they summarise.
     <div
       className={cn(
-        "grid gap-4",
-        cards.length >= 4 ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-3",
+        "grid grid-cols-2 gap-2.5 sm:gap-4",
+        cards.length >= 4 ? "lg:grid-cols-4" : cards.length === 3 ? "sm:grid-cols-3" : "",
+        cards.length === 1 && "grid-cols-1",
       )}
     >
       {cards.map(({ label, value, icon: Icon, color }) => (
         <div
           key={label}
-          className="flex items-center gap-4 rounded-xl border border-border bg-card p-4"
+          className="flex min-w-0 items-center gap-2.5 rounded-xl border border-border bg-card p-3 sm:gap-4 sm:p-4"
         >
           <div
             className={cn(
-              "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg",
+              "flex size-8 shrink-0 items-center justify-center rounded-lg sm:size-10",
               color ?? "bg-primary/10 text-primary",
             )}
           >
-            <Icon className="h-5 w-5" aria-hidden="true" />
+            <Icon className="size-4 sm:size-5" aria-hidden="true" />
           </div>
           <div className="min-w-0">
-            <p className="truncate text-xs font-medium text-muted-foreground">{label}</p>
-            <p className="text-lg font-bold text-foreground">{value}</p>
+            <p className="truncate text-xs font-medium text-muted-foreground" title={label}>{label}</p>
+            <p className="truncate text-base font-bold text-foreground sm:text-lg">{value}</p>
           </div>
         </div>
       ))}
@@ -107,6 +111,64 @@ export function FilterChips({
       </div>
     </div>
   );
+}
+
+// ── Filter selects ────────────────────────────────────────────────────────────
+
+export interface FilterSelectOption {
+  value: string;
+  label: string;
+  /** Shown after the label, e.g. "Approved (12)". */
+  count?: number;
+}
+
+/**
+ * A labelled dropdown filter for a list's toolbar (`ResourceListShell`
+ * `toolbar`), for a dimension with too many values for chips — an event, a
+ * reason. One label style and one width everywhere: pages wrote "Status :",
+ * "Status:" and no label at all, at four different widths.
+ *
+ * Full width on a phone, where a row of fixed-width selects ran off the screen.
+ */
+export function FilterSelect({
+  label,
+  value,
+  onChange,
+  options,
+  placeholder,
+  className,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: FilterSelectOption[];
+  /** Shown while nothing is chosen. */
+  placeholder?: string;
+  className?: string;
+}) {
+  return (
+    <div className={cn("flex min-w-0 items-center gap-2", className)}>
+      <span className="w-14 shrink-0 text-xs font-medium text-muted-foreground sm:w-auto">{label}</span>
+      <Select value={value} onValueChange={onChange}>
+        <SelectTrigger className="h-9 min-w-0 flex-1 text-sm sm:w-48 sm:flex-none" aria-label={`Filter by ${label.toLowerCase()}`}>
+          <SelectValue placeholder={placeholder} />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+              {option.count !== undefined && ` (${option.count})`}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
+/** A row of `FilterSelect`s (or any filter controls): stacked on a phone, one wrapping row from `sm`. */
+export function FilterBar({ children }: { children: ReactNode }) {
+  return <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4">{children}</div>;
 }
 
 // ── Pagination ────────────────────────────────────────────────────────────────
@@ -302,6 +364,12 @@ export interface ResourceListShellProps {
   /** Toolbar primary action. Omit when the page has no inline create. */
   createLabel?: string;
   onCreate?: () => void;
+  /**
+   * More filter controls under the search box — `FilterBar` + `FilterSelect`.
+   * This is where a list's filters go, not the page header: there they took
+   * the header's width, squeezed the title and ran off a phone's screen.
+   */
+  toolbar?: ReactNode;
   filters?: {
     label?: string;
     options: FilterOption[];
@@ -326,6 +394,7 @@ export function ResourceListShell({
   searchPlaceholder,
   createLabel,
   onCreate,
+  toolbar,
   filters,
   empty,
   isEmpty,
@@ -338,12 +407,15 @@ export function ResourceListShell({
   return (
     <div className="flex h-full w-full flex-col overflow-hidden">
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="container space-y-6 py-6">
+        {/* Not `container`: that utility pads itself, and the layout's column is
+            already padded — list pages sat 16px further in than the header
+            and every other page. */}
+        <div className="w-full space-y-4 sm:space-y-6">
           {stats && stats.length > 0 && <StatStrip cards={stats} />}
 
           <Card>
-            <CardContent className="px-4 py-6 md:py-8">
-              <div className="mb-6 space-y-3">
+            <CardContent className="px-3 py-4 sm:px-4 sm:py-6 md:py-8">
+              <div className="mb-4 space-y-3 sm:mb-6">
                 <div className="flex items-center gap-2.5">
                   <div className="relative flex-1">
                     <Search
@@ -367,6 +439,7 @@ export function ResourceListShell({
                     </Button>
                   )}
                 </div>
+                {toolbar}
                 {filters && <FilterChips {...filters} />}
               </div>
 

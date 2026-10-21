@@ -7,9 +7,11 @@ import {
   type DependencyList,
   type ReactNode,
 } from "react";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, MoreHorizontal } from "lucide-react";
 import { Link } from "@pageflow/react";
 import { Button } from "@ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@ui/dropdown-menu";
+import { cn } from "@lib/utils";
 import { ContentContainer } from "./content";
 
 /**
@@ -29,6 +31,11 @@ export interface PageHeaderAction {
   variant?: "default" | "outline" | "ghost" | "destructive";
   /** Greys the button out — for "nothing to save" states. */
   disabled?: boolean;
+  /**
+   * Always in the "More" menu, never a button of its own. For what is rare or
+   * risky (reset, delete, move): a button beside "Edit" gets clicked by habit.
+   */
+  menu?: boolean;
 }
 
 /**
@@ -140,27 +147,93 @@ function isActionArray(actions: unknown): actions is PageHeaderAction[] {
   );
 }
 
+/**
+ * How many buttons stand in the bar from `sm` up, the primary included. The
+ * rest go into "More": seven equal buttons took the whole bar, squeezed the
+ * title onto two lines and put "Reset votes" one slip away from "Edit".
+ */
+const MAX_VISIBLE_ACTIONS = 3;
+
+/**
+ * The bar's buttons. The LAST action is the primary one: it is always shown,
+ * with its label. Up to two more stand beside it from `sm` up; on a phone they
+ * move into "More" too, so the bar is one button and a menu at any width.
+ *
+ * Labels are always drawn. They used to be hidden below `sm` with only the
+ * icon left, and most actions have no icon — on a phone they were empty boxes.
+ */
 export function HeaderActions({ actions }: { actions?: PageHeaderAction[] | ReactNode }) {
   if (!actions) return null;
 
   if (!isActionArray(actions)) return <>{actions}</>;
   if (actions.length === 0) return null;
 
+  const primary = actions[actions.length - 1];
+  const others = actions.slice(0, -1);
+  const shown = others.filter((a) => !a.menu).slice(0, MAX_VISIBLE_ACTIONS - 1);
+  // In "More" at every width: asked for, or past the cap.
+  const alwaysInMenu = others.filter((a) => !shown.includes(a));
+
+  const tone = (action: PageHeaderAction, isPrimary: boolean) =>
+    action.variant ?? (isPrimary ? "default" : "outline");
+
   return (
-    <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5 md:gap-2">
-      {actions.map((action, i) => (
+    <div className="flex shrink-0 items-center justify-end gap-1.5 md:gap-2">
+      {shown.map((action, i) => (
         <Button
           key={`${action.label}-${i}`}
-          variant={action.variant ?? (i === actions.length - 1 ? "default" : "outline")}
+          variant={tone(action, false)}
           size="sm"
           onClick={action.onClick}
           disabled={action.disabled}
-          className="h-8 gap-1.5 px-2.5 text-xs md:px-3 md:text-sm"
+          className="hidden h-8 gap-1.5 px-3 text-sm sm:inline-flex"
         >
           {action.icon}
-          <span className="hidden sm:inline">{action.label}</span>
+          {action.label}
         </Button>
       ))}
+      {others.length > 0 && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              aria-label="More actions"
+              title="More actions"
+              className={cn("h-8 w-8 p-0", alwaysInMenu.length === 0 && "sm:hidden")}
+            >
+              <MoreHorizontal className="size-4" aria-hidden="true" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-48">
+            {others.map((action, i) => (
+              <DropdownMenuItem
+                key={`${action.label}-${i}`}
+                onSelect={action.onClick}
+                disabled={action.disabled}
+                className={cn(
+                  "gap-2",
+                  shown.includes(action) && "sm:hidden",
+                  action.variant === "destructive" && "text-destructive focus:text-destructive",
+                )}
+              >
+                {action.icon}
+                {action.label}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+      <Button
+        variant={tone(primary, true)}
+        size="sm"
+        onClick={primary.onClick}
+        disabled={primary.disabled}
+        className="h-8 max-w-44 gap-1.5 px-3 text-sm sm:max-w-none"
+      >
+        {primary.icon}
+        <span className="truncate">{primary.label}</span>
+      </Button>
     </div>
   );
 }
@@ -189,32 +262,54 @@ function BackLink({ back }: { back: PageHeaderBack }) {
 export function PageHeaderBar() {
   const { header } = usePageHeader();
   if (!header) return null;
+  const list = isActionArray(header.actions);
 
   return (
     // The BAR spans the viewport — its border and background are chrome — while
     // its content sits in the same centred column as `main`, so the title lines
     // up with the thing it is titling.
+    //
+    // The title and description come FIRST and take one line each from `md` up
+    // (the full text is in the tooltip). The actions used to be `shrink-0`, so
+    // they took their full width before the title got any and a page with
+    // filters or seven buttons squeezed its name onto two lines and its
+    // description onto three — the bar grew to twice its height, differently
+    // on every page.
+    //
+    // Button lists (`PageHeaderAction[]`) sit on the title's row at every width:
+    // HeaderActions keeps them to one button and a "More" menu on a phone.
+    // Free-form actions cannot be folded, so on a phone they get their own row,
+    // and from `md` up at most 60% of the bar, wrapping inside it.
     <div className="shrink-0 border-b border-border bg-background py-2.5 md:py-3">
       <ContentContainer>
-        <div className="flex flex-col items-stretch gap-2 md:flex-row md:items-center md:justify-between md:gap-8">
+        <div className={cn("flex gap-x-3 gap-y-2 md:items-center md:gap-x-6", list ? "items-center" : "flex-col md:flex-row")}>
           <div className="flex min-w-0 flex-1 items-center gap-2 md:gap-3">
             {header.back && <BackLink back={header.back} />}
             <div className="min-w-0 flex-1">
-              <h1 className="line-clamp-2 text-sm font-semibold leading-tight text-foreground md:text-base lg:text-lg">
+              <h1
+                title={header.title}
+                className="line-clamp-2 text-base font-semibold leading-tight text-foreground md:line-clamp-1 lg:text-lg"
+              >
                 {header.title}
               </h1>
               {header.description && (
-                <p className="mt-0.5 line-clamp-3 text-sm text-muted-foreground">
+                <p
+                  title={header.description}
+                  className="mt-0.5 line-clamp-2 text-xs text-muted-foreground sm:text-sm md:line-clamp-1"
+                >
                   {header.description}
                 </p>
               )}
             </div>
           </div>
-          {header.actions && (
-            <div className="flex w-full shrink-0 items-center overflow-x-auto md:w-auto">
+          {header.actions &&
+            (list ? (
               <HeaderActions actions={header.actions} />
-            </div>
-          )}
+            ) : (
+              <div className="flex min-w-0 flex-wrap items-center gap-2 md:max-w-[60%] md:justify-end">
+                <HeaderActions actions={header.actions} />
+              </div>
+            ))}
         </div>
       </ContentContainer>
     </div>

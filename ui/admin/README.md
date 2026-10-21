@@ -220,8 +220,20 @@ useSetPageHeader({ title, description, back, crumbs, actions }, [deps]); // clea
 useSetPageFooter({ content: <BulkActionBar /> }, [selected]);           // sticky bottom bar
 ```
 
-`actions` is either `PageHeaderAction[]` (rendered as buttons, last one primary)
-or arbitrary JSX.
+`actions` is either `PageHeaderAction[]` or arbitrary JSX. Prefer the array:
+
+- the LAST action is the primary button and is always shown;
+- up to two others stand beside it from `sm` up, the rest go into a "More" (⋯)
+  menu — on a phone only the primary and the menu are drawn;
+- `menu: true` puts an action in "More" at every width. Use it for what is rare
+  or risky (move, export, reset): a button beside "Edit" gets clicked by habit.
+
+JSX cannot be folded into a menu, so it takes its own row on a phone and at
+most 60% of the bar from `md` up. Filters do not belong in the header at all —
+put them in the list's `toolbar` (§6).
+
+The title and the description are one line each from `md` up (full text in the
+tooltip), two on a phone. Keep the description to one short sentence.
 
 `back` is `{ href, label }` and renders an arrow before the title — a DETAIL
 page's way up. The label is the accessible name and is never drawn: a detail
@@ -313,6 +325,25 @@ const list = useResourceList({
 </ResourceListShell>
 ```
 
+More filters than one set of chips go in `toolbar`, under the search box, as a
+`FilterBar` of `FilterSelect`s — one label style and width everywhere, full
+width on a phone:
+
+```tsx
+<ResourceListShell
+  …
+  toolbar={
+    <FilterBar>
+      <FilterSelect label="Event" value={event} onChange={setEvent} options={EVENTS} />
+      <FilterSelect label="Status" value={status} onChange={setStatus}
+        options={STATUSES.map((s) => ({ ...s, count: counts[s.value] }))} />
+    </FilterBar>
+  }
+>
+```
+
+The stat strip is two cards to a row on a phone.
+
 **`DataTable`** — the batteries-included alternative: sorting, column filters,
 row-action menu with delete confirmation, and a server-side mode
 (`serverSide` + `onFetchData`, search debounced) for datasets too large to hold.
@@ -344,7 +375,7 @@ hold in React state.
 |---|---|
 | nav | `registerModule` `unregisterModule` `registerFeature` `enableFeature` `disableFeature` `setEnabledFeatures` `isFeatureEnabled` `getAllFeatures` `getEnabledFeatures` `getModules` `getNavSections` `selectNavSections` `getFlatRoutes` `selectFlatRoutes` `registerIcons` `getIcon` `resolveIcon` `registeredIconNames` `registerSettingsTab` `selectSettingsTabs` `getSettingsTabs` |
 | shell | `AdminLayout` `AuthLayout` `SidebarContent` `SidebarNav` `DashboardHeader` `OrgSwitcher` `ThemeToggle` `PageChromeProvider` `PageHeaderBar` `PageFooterBar` `HeaderActions` `usePageHeader` `usePageFooter` `useSetPageHeader` `useSetPageFooter` `crumbsFor` `registryTrail` `useAdminShell` `useCurrentPath` — plus `AppErrorBoundary`, re-exported from `@pageflow/react` |
-| data | `DataTable` `ResourceListShell` `StatStrip` `FilterChips` `Pagination` `pageWindow` `EmptyState` `SimpleTable` `useResourceList` `resourceRequest` `copyToClipboard` `KpiCard` `DetailDrawer` `DrawerSection` `DrawerField` `TableQuery` |
+| data | `DataTable` `ResourceListShell` `StatStrip` `FilterChips` `FilterSelect` `FilterBar` `Pagination` `pageWindow` `EmptyState` `SimpleTable` `useResourceList` `resourceRequest` `copyToClipboard` `KpiCard` `DetailDrawer` `DrawerSection` `DrawerField` `TableQuery` |
 | forms | `FieldHelp` `TagInput` `SuggestionSelect` |
 | hooks | `useMediaQuery` `useIsMobile` `useIsTablet` `useIsDesktop` `usePrefersReducedMotion` `usePageflowErrors` `useDebouncedAutosave` `useApi` |
 

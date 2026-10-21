@@ -5,6 +5,8 @@ export {
   ResourceListShell,
   StatStrip,
   FilterChips,
+  FilterSelect,
+  FilterBar,
   Pagination,
   pageWindow,
   EmptyState,
@@ -14,6 +16,7 @@ export type {
   ResourceListShellProps,
   StatCard,
   FilterOption,
+  FilterSelectOption,
   EmptyStateProps,
   SimpleColumn,
 } from "./ResourceListShell";
